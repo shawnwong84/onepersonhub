@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function PUT(
   request: NextRequest,
@@ -44,6 +45,20 @@ export async function PUT(
         ? "*".repeat(apiKey.key.length - 8) + apiKey.key.slice(-8)
         : apiKey.key;
 
+    await logActivity({
+      action: "settings.api_key_updated",
+      entity: ACTIVITY_ENTITIES.SETTINGS,
+      entityId: apiKey.id,
+      description: `Updated API key: ${apiKey.name}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        changedFields: Object.keys(updateData),
+        isActive: apiKey.isActive,
+      },
+      ...getActivityRequestContext(request),
+    });
+
     return NextResponse.json({ ...apiKey, key: maskedKey });
   } catch (error) {
     logger.error("Failed to update API key:", error);
@@ -73,6 +88,20 @@ export async function DELETE(
     }
 
     await prisma.apiKey.delete({ where: { id } });
+
+    await logActivity({
+      action: "settings.api_key_deleted",
+      entity: ACTIVITY_ENTITIES.SETTINGS,
+      entityId: existing.id,
+      description: `Deleted API key: ${existing.name}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        name: existing.name,
+        wasActive: existing.isActive,
+      },
+      ...getActivityRequestContext(request),
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

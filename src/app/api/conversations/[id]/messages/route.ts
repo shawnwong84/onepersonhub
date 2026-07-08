@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { emitNewMessage } from "@/lib/realtime";
+import { sendWhatsAppMessage } from "@/lib/channels/whatsapp";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function GET(
   request: NextRequest,
@@ -70,20 +72,73 @@ export async function POST(
       );
     }
 
-    const validRoles = ["customer", "assistant", "system"];
+    const validRoles = ["customer", "assistant", "admin", "system"];
     const messageRole = validRoles.includes(role) ? role : "assistant";
+    let deliveryStatus = "not_applicable";
+
+    if (messageRole === "admin" && conversation.channel === "whatsapp") {
+      deliveryStatus = "pending";
+    }
 
     const message = await prisma.message.create({
       data: {
         conversationId: id,
         role: messageRole,
         content: content.trim(),
+        ...(messageRole === "admin" && {
+          toolCalls: {
+            source: "admin",
+            deliveryStatus,
+          },
+        }),
       },
     });
+
+    if (messageRole === "admin" && conversation.channel === "whatsapp") {
+      try {
+        const delivered = await sendWhatsAppMessage(
+          conversation.customerContact,
+          content.trim()
+        );
+        deliveryStatus = delivered ? "sent" : "failed";
+      } catch (error) {
+        logger.error("Failed to send WhatsApp manual reply:", error);
+        deliveryStatus = "failed";
+      }
+
+      await prisma.message.update({
+        where: { id: message.id },
+        data: {
+          toolCalls: {
+            source: "admin",
+            deliveryStatus,
+          },
+        },
+      });
+    }
 
     await prisma.conversation.update({
       where: { id },
       data: { updatedAt: new Date() },
+    });
+
+    await logActivity({
+      action: messageRole === "admin" ? "message.manual_reply_sent" : "message.created",
+      entity: ACTIVITY_ENTITIES.MESSAGE,
+      entityId: message.id,
+      description:
+        messageRole === "admin"
+          ? `Manual reply sent to ${conversation.customerName || conversation.customerContact}.`
+          : `Created ${messageRole} message in conversation.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        conversationId: id,
+        channel: conversation.channel,
+        role: messageRole,
+        deliveryStatus,
+      },
+      ...getActivityRequestContext(request),
     });
 
     emitNewMessage(id, { id: message.id, role: messageRole, content: content.trim() });

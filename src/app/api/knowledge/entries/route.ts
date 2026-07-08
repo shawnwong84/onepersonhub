@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request, "knowledge:read");
@@ -84,6 +85,21 @@ export async function POST(request: NextRequest) {
           select: { id: true, name: true, color: true, icon: true },
         },
       },
+    });
+
+    await logActivity({
+      action: "knowledge.entry_created",
+      entity: ACTIVITY_ENTITIES.KNOWLEDGE,
+      entityId: entry.id,
+      description: `Created knowledge entry: ${entry.title}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        categoryId: entry.categoryId,
+        categoryName: entry.category.name,
+        priority: entry.priority,
+      },
+      ...getActivityRequestContext(request),
     });
 
     return NextResponse.json(entry, { status: 201 });

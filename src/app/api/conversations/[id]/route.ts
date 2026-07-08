@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { emitConversationUpdate } from "@/lib/realtime";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function GET(
   request: NextRequest,
@@ -112,6 +113,41 @@ export async function PUT(
       },
     });
 
+    const changes: Record<string, { from: string | number | null; to: string | number | null }> = {};
+    if (status !== undefined && status !== existing.status) {
+      changes.status = { from: existing.status, to: status };
+    }
+    if (customerName !== undefined && customerName.trim() !== existing.customerName) {
+      changes.customerName = { from: existing.customerName, to: customerName.trim() };
+    }
+    if (customerContact !== undefined && customerContact.trim() !== existing.customerContact) {
+      changes.customerContact = { from: existing.customerContact, to: customerContact.trim() };
+    }
+    if (satisfaction !== undefined && satisfaction !== existing.satisfaction) {
+      changes.satisfaction = { from: existing.satisfaction, to: satisfaction };
+    }
+
+    if (Object.keys(changes).length > 0) {
+      await logActivity({
+        action: status !== undefined && status !== existing.status
+          ? "conversation.status_changed"
+          : "conversation.updated",
+        entity: ACTIVITY_ENTITIES.CONVERSATION,
+        entityId: id,
+        description: status !== undefined && status !== existing.status
+          ? `Conversation status changed from ${existing.status} to ${status}.`
+          : `Conversation updated for ${conversation.customerName}.`,
+        userId: auth.userId,
+        userName: auth.name || auth.username,
+        metadata: {
+          changes,
+          channel: conversation.channel,
+          customerName: conversation.customerName,
+        },
+        ...getActivityRequestContext(request),
+      });
+    }
+
     if (tagIds && Array.isArray(tagIds)) {
       await prisma.conversationTag.deleteMany({
         where: { conversationId: id },
@@ -125,6 +161,20 @@ export async function PUT(
           })),
         });
       }
+
+      await logActivity({
+        action: "conversation.tags_updated",
+        entity: ACTIVITY_ENTITIES.CONVERSATION,
+        entityId: id,
+        description: `Updated tags for conversation with ${conversation.customerName}.`,
+        userId: auth.userId,
+        userName: auth.name || auth.username,
+        metadata: {
+          tagIds,
+          channel: conversation.channel,
+        },
+        ...getActivityRequestContext(request),
+      });
 
       const updated = await prisma.conversation.findUnique({
         where: { id },
@@ -169,6 +219,22 @@ export async function DELETE(
     }
 
     await prisma.conversation.delete({ where: { id } });
+
+    await logActivity({
+      action: "conversation.deleted",
+      entity: ACTIVITY_ENTITIES.CONVERSATION,
+      entityId: existing.id,
+      description: `Deleted ${existing.channel} conversation for ${existing.customerName}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        channel: existing.channel,
+        customerName: existing.customerName,
+        customerContact: existing.customerContact,
+        status: existing.status,
+      },
+      ...getActivityRequestContext(request),
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request, "conversations:read");
@@ -21,7 +23,25 @@ export async function GET(request: NextRequest) {
       where.channel = channel;
     }
 
-    if (status && status !== "all") {
+    if (status === "waiting_approval") {
+      where.metadata = {
+        path: ["pendingWorkflowApproval", "status"],
+        equals: "pending",
+      };
+    } else if (status === "unassigned") {
+      where.OR = [
+        { metadata: { path: ["assignedToId"], equals: Prisma.JsonNull } },
+        { metadata: { path: ["assignedToId"], equals: "" } },
+      ];
+    } else if (status === "human_takeover") {
+      where.metadata = {
+        path: ["humanTakeover"],
+        equals: true,
+      };
+    } else if (status === "sla_risk") {
+      where.status = { in: ["active", "escalated"] };
+      where.updatedAt = { lt: new Date(Date.now() - 30 * 60 * 1000) };
+    } else if (status && status !== "all") {
       where.status = status;
     }
 
@@ -98,6 +118,22 @@ export async function POST(request: NextRequest) {
           include: { tag: true },
         },
       },
+    });
+
+    await logActivity({
+      action: "conversation.created",
+      entity: ACTIVITY_ENTITIES.CONVERSATION,
+      entityId: conversation.id,
+      description: `Created ${conversation.channel} conversation for ${conversation.customerName}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        channel: conversation.channel,
+        customerName: conversation.customerName,
+        customerContact: conversation.customerContact,
+        status: conversation.status,
+      },
+      ...getActivityRequestContext(request),
     });
 
     return NextResponse.json(conversation, { status: 201 });

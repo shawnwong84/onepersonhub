@@ -87,7 +87,41 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data: entries, total: entries.length });
     }
 
-    return NextResponse.json({ error: "Invalid type. Supported: conversations, tickets, customers, knowledge" }, { status: 400 });
+    if (type === "workflow_runs") {
+      const runs = await prisma.workflowRun.findMany({
+        where: dateWhere,
+        include: { steps: { orderBy: { createdAt: "asc" } } },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+
+      if (format === "csv") {
+        return csvResponse(workflowRunsToCSV(runs), "workflow-runs");
+      }
+      return NextResponse.json({ data: runs, total: runs.length });
+    }
+
+    if (type === "approval_audit") {
+      const decisions = await prisma.message.findMany({
+        where: {
+          ...dateWhere,
+          role: "system",
+          toolCalls: {
+            path: ["source"],
+            equals: "workflow_approval_decision",
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+
+      if (format === "csv") {
+        return csvResponse(approvalAuditToCSV(decisions), "approval-audit");
+      }
+      return NextResponse.json({ data: decisions, total: decisions.length });
+    }
+
+    return NextResponse.json({ error: "Invalid type. Supported: conversations, tickets, customers, knowledge, workflow_runs, approval_audit" }, { status: 400 });
   } catch (error) {
     logger.error("Failed to export data:", error);
     return NextResponse.json({ error: "Failed to export data" }, { status: 500 });
@@ -146,6 +180,67 @@ function knowledgeToCSV(entries: Array<{
   const rows = entries.map((e) => [
     e.id, e.category.name, e.title, e.content.substring(0, 500), e.priority.toString(), e.isActive ? "Yes" : "No",
   ]);
+  return [headers, ...rows].map((row) => row.map(escapeCSV).join(",")).join("\n");
+}
+
+function workflowRunsToCSV(runs: Array<{
+  id: string; flowId: string | null; flowName: string; conversationId: string | null;
+  triggerEvent: string; channel: string; status: string; reason: string;
+  messagePreview: string; createdAt: Date; completedAt: Date | null;
+  steps: Array<{ nodeLabel: string; actionType: string; status: string; message: string }>;
+}>): string {
+  const headers = [
+    "ID",
+    "Flow ID",
+    "Flow Name",
+    "Conversation ID",
+    "Trigger",
+    "Channel",
+    "Status",
+    "Reason",
+    "Message Preview",
+    "Step Count",
+    "Failed Steps",
+    "Created At",
+    "Completed At",
+  ];
+  const rows = runs.map((run) => [
+    run.id,
+    run.flowId || "",
+    run.flowName,
+    run.conversationId || "",
+    run.triggerEvent,
+    run.channel,
+    run.status,
+    run.reason,
+    run.messagePreview,
+    String(run.steps.length),
+    String(run.steps.filter((step) => step.status === "failed").length),
+    run.createdAt.toISOString(),
+    run.completedAt?.toISOString() || "",
+  ]);
+  return [headers, ...rows].map((row) => row.map(escapeCSV).join(",")).join("\n");
+}
+
+function approvalAuditToCSV(messages: Array<{
+  id: string; conversationId: string; content: string; toolCalls: unknown; createdAt: Date;
+}>): string {
+  const headers = ["ID", "Conversation ID", "Decision", "Approval ID", "Approver", "Comment", "Created At"];
+  const rows = messages.map((message) => {
+    const metadata =
+      message.toolCalls && typeof message.toolCalls === "object" && !Array.isArray(message.toolCalls)
+        ? (message.toolCalls as Record<string, unknown>)
+        : {};
+    return [
+      message.id,
+      message.conversationId,
+      String(metadata.decision || ""),
+      String(metadata.approvalId || ""),
+      String(metadata.approvedByName || metadata.actorName || ""),
+      String(metadata.comment || message.content || ""),
+      message.createdAt.toISOString(),
+    ];
+  });
   return [headers, ...rows].map((row) => row.map(escapeCSV).join(",")).join("\n");
 }
 

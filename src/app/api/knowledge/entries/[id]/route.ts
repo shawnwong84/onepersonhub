@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function PUT(
   request: NextRequest,
@@ -40,6 +41,22 @@ export async function PUT(
       },
     });
 
+    await logActivity({
+      action: "knowledge.entry_updated",
+      entity: ACTIVITY_ENTITIES.KNOWLEDGE,
+      entityId: entry.id,
+      description: `Updated knowledge entry: ${entry.title}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        categoryId: entry.categoryId,
+        categoryName: entry.category.name,
+        version: entry.version,
+        isActive: entry.isActive,
+      },
+      ...getActivityRequestContext(request),
+    });
+
     return NextResponse.json(entry);
   } catch (error) {
     logger.error("Failed to update entry:", error);
@@ -69,6 +86,21 @@ export async function DELETE(
     }
 
     await prisma.knowledgeEntry.delete({ where: { id } });
+
+    await logActivity({
+      action: "knowledge.entry_deleted",
+      entity: ACTIVITY_ENTITIES.KNOWLEDGE,
+      entityId: existing.id,
+      description: `Deleted knowledge entry: ${existing.title}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        categoryId: existing.categoryId,
+        version: existing.version,
+        isActive: existing.isActive,
+      },
+      ...getActivityRequestContext(request),
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function PUT(
   request: NextRequest,
@@ -55,6 +56,23 @@ export async function PUT(
       },
     });
 
+    await logActivity({
+      action: "settings.team_member_updated",
+      entity: ACTIVITY_ENTITIES.SETTINGS,
+      entityId: member.id,
+      description: `Updated team member: ${member.name}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        email: member.email,
+        role: member.role,
+        departmentId: member.departmentId,
+        departmentName: member.department.name,
+        isAvailable: member.isAvailable,
+      },
+      ...getActivityRequestContext(request),
+    });
+
     return NextResponse.json(member);
   } catch (error) {
     logger.error("Failed to update member:", error);
@@ -75,8 +93,25 @@ export async function DELETE(
   try {
     const { id } = await params;
 
+    const existing = await prisma.teamMember.findUnique({ where: { id } });
+
     await prisma.teamMember.delete({
       where: { id },
+    });
+
+    await logActivity({
+      action: "settings.team_member_deleted",
+      entity: ACTIVITY_ENTITIES.SETTINGS,
+      entityId: id,
+      description: `Deleted team member: ${existing?.name || id}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        email: existing?.email || null,
+        role: existing?.role || null,
+        departmentId: existing?.departmentId || null,
+      },
+      ...getActivityRequestContext(request),
     });
 
     return NextResponse.json({ success: true });

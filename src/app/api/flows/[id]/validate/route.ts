@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
-import { validateFlow, type Flow } from "@/lib/flow-builder";
+import { validateFlow, type CanvasFlow } from "@/lib/flow-builder";
 import { logger } from "@/lib/logger";
 
 export async function POST(
@@ -22,7 +22,17 @@ export async function POST(
       );
     }
 
-    const result = validateFlow(flow as unknown as Flow);
+    const canvasFlow: CanvasFlow = {
+      id: flow.id,
+      name: flow.name,
+      description: flow.description,
+      startNodeId: flow.startNodeId,
+      nodes: (flow.nodes as unknown as CanvasFlow["nodes"]) || [],
+      edges: (flow.edges as unknown as CanvasFlow["edges"]) || [],
+      isActive: flow.isActive,
+    };
+
+    const result = validateFlow(canvasFlow);
 
     return NextResponse.json(result);
   } catch (error) {

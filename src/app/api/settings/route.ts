@@ -4,6 +4,7 @@ import { maskSettingsSecrets } from "@/lib/security";
 import { updateSettingsSchema, validateBody } from "@/lib/validations";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request, "settings:read");
@@ -51,6 +52,23 @@ export async function PUT(request: NextRequest) {
       where: { id: "default" },
       update: validation.data,
       create: { id: "default", ...validation.data },
+    });
+
+    await logActivity({
+      action: "settings.updated",
+      entity: ACTIVITY_ENTITIES.SETTINGS,
+      entityId: settings.id,
+      description: "Updated system settings.",
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        fields: Object.keys(validation.data),
+        tokenBudgetChanged:
+          "dailyTokenBudget" in validation.data ||
+          "monthlyTokenBudget" in validation.data ||
+          "maxTokens" in validation.data,
+      },
+      ...getActivityRequestContext(request),
     });
 
     return NextResponse.json(maskSettingsSecrets(settings));

@@ -41,7 +41,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, description, startNodeId, nodes, isActive } = body;
+    const { name, description, startNodeId, nodes, edges, isActive } = body;
 
     const existing = await prisma.flow.findUnique({ where: { id } });
     if (!existing) {
@@ -58,6 +58,7 @@ export async function PUT(
         ...(description !== undefined && { description: description.trim() }),
         ...(startNodeId !== undefined && { startNodeId }),
         ...(nodes !== undefined && { nodes }),
+        ...(edges !== undefined && { edges }),
         ...(isActive !== undefined && { isActive }),
       },
     });

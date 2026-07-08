@@ -29,7 +29,58 @@ export async function GET(request: NextRequest) {
       prisma.flow.count({ where }),
     ]);
 
-    return NextResponse.json(paginatedResponse(flows, total, page, limit));
+    const flowIds = flows.map((flow) => flow.id);
+    let latestRunsByFlow = new Map<
+      string,
+      {
+        id: string;
+        status: string;
+        reason: string;
+        createdAt: Date;
+        completedAt: Date | null;
+      }[]
+    >();
+
+    if (flowIds.length > 0) {
+      try {
+        const latestRuns = await prisma.workflowRun.findMany({
+          where: { flowId: { in: flowIds } },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            flowId: true,
+            status: true,
+            reason: true,
+            createdAt: true,
+            completedAt: true,
+          },
+        });
+
+        latestRunsByFlow = latestRuns.reduce((map, run) => {
+          if (run.flowId && !map.has(run.flowId)) {
+            map.set(run.flowId, [
+              {
+                id: run.id,
+                status: run.status,
+                reason: run.reason,
+                createdAt: run.createdAt,
+                completedAt: run.completedAt,
+              },
+            ]);
+          }
+          return map;
+        }, latestRunsByFlow);
+      } catch (runError) {
+        logger.error("Failed to attach latest flow runs:", runError);
+      }
+    }
+
+    const flowsWithRuns = flows.map((flow) => ({
+      ...flow,
+      runs: latestRunsByFlow.get(flow.id) || [],
+    }));
+
+    return NextResponse.json(paginatedResponse(flowsWithRuns, total, page, limit));
   } catch (error) {
     logger.error("Failed to fetch flows:", error);
     return NextResponse.json(
@@ -45,7 +96,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { name, description, startNodeId, nodes, isActive } = body;
+    const { name, description, startNodeId, nodes, edges, isActive } = body;
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json(
@@ -60,6 +111,7 @@ export async function POST(request: NextRequest) {
         description: description?.trim() || "",
         startNodeId: startNodeId || "",
         nodes: nodes || [],
+        edges: edges || [],
         isActive: isActive ?? false,
       },
     });

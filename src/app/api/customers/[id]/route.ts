@@ -19,6 +19,7 @@ export async function GET(
         notes: {
           orderBy: { createdAt: "desc" },
         },
+        _count: { select: { notes: true } },
       },
     });
 

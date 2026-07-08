@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { logger } from "@/lib/logger";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 function maskKey(key: string): string {
   if (key.length <= 8) return key;
@@ -68,6 +69,20 @@ export async function POST(request: NextRequest) {
         name: name.trim(),
         key: fullKey,
       },
+    });
+
+    await logActivity({
+      action: "settings.api_key_created",
+      entity: ACTIVITY_ENTITIES.SETTINGS,
+      entityId: apiKey.id,
+      description: `Created API key: ${apiKey.name}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        name: apiKey.name,
+        isActive: apiKey.isActive,
+      },
+      ...getActivityRequestContext(request),
     });
 
     // Return full key only on creation

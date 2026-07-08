@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request, "team:read");
@@ -83,6 +84,22 @@ export async function POST(request: NextRequest) {
           select: { id: true, name: true },
         },
       },
+    });
+
+    await logActivity({
+      action: "settings.team_member_created",
+      entity: ACTIVITY_ENTITIES.SETTINGS,
+      entityId: member.id,
+      description: `Created team member: ${member.name}.`,
+      userId: auth.userId,
+      userName: auth.name || auth.username,
+      metadata: {
+        email: member.email,
+        role: member.role,
+        departmentId: member.departmentId,
+        departmentName: member.department.name,
+      },
+      ...getActivityRequestContext(request),
     });
 
     return NextResponse.json(member, { status: 201 });
