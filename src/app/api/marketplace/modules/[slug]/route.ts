@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
-import { findMarketplaceModule } from "@/lib/marketplace/catalog";
+import { CORE_MODULE_SLUGS, findMarketplaceModule } from "@/lib/marketplace/catalog";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { logger } from "@/lib/logger";
@@ -23,10 +23,12 @@ function mergeModuleState(slug: string, state: Awaited<ReturnType<typeof prisma.
   const catalog = findMarketplaceModule(slug);
   if (!catalog) return null;
 
+  const isCore = CORE_MODULE_SLUGS.includes(slug);
   return {
     ...catalog,
-    isInstalled: state?.isInstalled ?? catalog.isInstalled,
-    isEnabled: state?.isEnabled ?? catalog.isEnabled,
+    isCore,
+    isInstalled: isCore || (state?.isInstalled ?? catalog.isInstalled),
+    isEnabled: isCore || (state?.isEnabled ?? catalog.isEnabled),
     installedAt: state?.installedAt?.toISOString() || null,
     installedBy: state?.installedBy || null,
     disabledAt: state?.disabledAt?.toISOString() || null,
@@ -87,6 +89,13 @@ export async function POST(
 
     if (!["install", "enable", "disable", "uninstall", "configure", "upgrade"].includes(action)) {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+    }
+
+    if (CORE_MODULE_SLUGS.includes(slug) && (action === "disable" || action === "uninstall")) {
+      return NextResponse.json(
+        { error: `${catalog.name} is a core module and cannot be ${action === "disable" ? "disabled" : "uninstalled"}.` },
+        { status: 400 }
+      );
     }
 
     if ((action === "disable" || action === "uninstall") && !force) {

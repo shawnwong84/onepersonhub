@@ -1,13 +1,22 @@
 import { prisma } from "@/lib/prisma";
-import { findMarketplaceModule } from "@/lib/marketplace/catalog";
+import { CORE_MODULE_SLUGS, findMarketplaceModule } from "@/lib/marketplace/catalog";
 
 export async function getInstalledModule(slug: string) {
   const catalog = findMarketplaceModule(slug);
   if (!catalog) return null;
 
+  const isCore = CORE_MODULE_SLUGS.includes(slug);
   let moduleState = await prisma.businessModule.findUnique({ where: { slug } });
 
-  if (!moduleState && catalog.isInstalled) {
+  // Core modules ship installed; heal any legacy row that says otherwise.
+  if (moduleState && isCore && (!moduleState.isInstalled || !moduleState.isEnabled)) {
+    moduleState = await prisma.businessModule.update({
+      where: { slug },
+      data: { isInstalled: true, isEnabled: true, disabledAt: null },
+    });
+  }
+
+  if (!moduleState && (catalog.isInstalled || isCore)) {
     moduleState = await prisma.businessModule.create({
       data: {
         slug,

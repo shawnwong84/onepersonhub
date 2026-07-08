@@ -21,6 +21,7 @@ interface MarketplaceModule {
   examples: string[];
   isInstalled: boolean;
   isEnabled: boolean;
+  isCore?: boolean;
   version: string;
   installedAt?: string | null;
   installedBy?: string | null;
@@ -223,12 +224,14 @@ export default function MarketplacePage() {
                             <span
                               className={cn(
                                 "rounded-full px-2 py-0.5 text-xs font-semibold",
-                                module.isInstalled
+                                module.isCore
+                                  ? "bg-owly-primary-50 text-owly-primary"
+                                  : module.isInstalled
                                   ? "bg-green-100 text-green-700"
                                   : "bg-owly-bg text-owly-text-light"
                               )}
                             >
-                              {module.isInstalled ? "Installed" : "Available"}
+                              {module.isCore ? "Core" : module.isInstalled ? "Installed" : "Available"}
                             </span>
                           </div>
                           <p className="mt-3 line-clamp-2 text-sm text-owly-text-light">{module.description}</p>
@@ -297,24 +300,28 @@ export default function MarketplacePage() {
                         >
                           {actionLoading === "configure" ? "Saving..." : "Save config"}
                         </button>
-                        <button
-                          type="button"
-                          disabled={Boolean(actionLoading)}
-                          onClick={() =>
-                            runModuleAction(selected.slug, selected.isEnabled ? "disable" : "enable")
-                          }
-                          className="rounded-lg border border-owly-border px-4 py-2 text-sm font-semibold text-owly-text hover:bg-owly-bg disabled:opacity-60"
-                        >
-                          {selected.isEnabled ? "Disable" : "Enable"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={Boolean(actionLoading)}
-                          onClick={() => runModuleAction(selected.slug, "uninstall")}
-                          className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
-                        >
-                          Uninstall
-                        </button>
+                        {!selected.isCore && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={Boolean(actionLoading)}
+                              onClick={() =>
+                                runModuleAction(selected.slug, selected.isEnabled ? "disable" : "enable")
+                              }
+                              className="rounded-lg border border-owly-border px-4 py-2 text-sm font-semibold text-owly-text hover:bg-owly-bg disabled:opacity-60"
+                            >
+                              {selected.isEnabled ? "Disable" : "Enable"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={Boolean(actionLoading)}
+                              onClick={() => runModuleAction(selected.slug, "uninstall")}
+                              className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                            >
+                              Uninstall
+                            </button>
+                          </>
+                        )}
                         <Link
                           href={`/modules/${selected.slug}`}
                           className="rounded-lg border border-owly-border px-4 py-2 text-sm font-semibold text-owly-text hover:bg-owly-bg"

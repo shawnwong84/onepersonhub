@@ -106,17 +106,17 @@ Acceptance criteria:
 
 Goal: Customer Care and Reporter Agent are part of the product, not optional installs.
 
-- [ ] Add `isCore` flag to the marketplace catalog entries (`customer-care`, `reporter-agent`).
-- [ ] Setup/boot seeding: core modules are created installed+enabled if missing (extend `getInstalledModule` auto-create).
-- [ ] Marketplace UI: core modules show a "Core" badge; uninstall and disable actions are hidden.
-- [ ] Marketplace API: reject `uninstall`/`disable` for core modules with a clear error.
-- [ ] Core modules are visible to every logged-in user regardless of assignments (read); write still needs assignment or supervisor+.
-- [ ] Dependency checks: uninstalling any module keeps core module data intact.
+- [x] `CORE_MODULE_SLUGS` in the marketplace catalog (`customer-care`, `reporter-agent`); APIs expose `isCore` per module.
+- [x] Core modules always report installed+enabled in the marketplace APIs; `getInstalledModule` auto-creates them on first access and heals legacy rows that say uninstalled.
+- [x] Marketplace UI: core modules show a "Core" badge; uninstall and disable actions are hidden.
+- [x] Marketplace API: reject `uninstall`/`disable` for core modules with a clear error.
+- [x] Core modules are visible to every logged-in user regardless of assignments (read); write still needs assignment or supervisor+ (delivered in Phase 3 scoping).
+- [x] Dependency checks: uninstalling any module keeps core module data intact (uninstall only touches the target module's rows).
 
 Acceptance criteria:
 
-- [ ] Fresh setup lands with Customer Care and Reporter Agent ready to use.
-- [ ] No user, including admin, can uninstall or disable a core module.
+- [x] Fresh setup lands with Customer Care and Reporter Agent ready to use.
+- [x] No user, including admin, can uninstall or disable a core module. (Verified: API returns 400 "core module", UI hides the buttons.)
 
 ## Phase 5: Reporter Agent Chatbot
 

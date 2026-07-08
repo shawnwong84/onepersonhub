@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { MARKETPLACE_CATEGORIES, MARKETPLACE_MODULES } from "@/lib/marketplace/catalog";
+import { CORE_MODULE_SLUGS, MARKETPLACE_CATEGORIES, MARKETPLACE_MODULES } from "@/lib/marketplace/catalog";
 import { getAccessibleModuleSlugs, isUnscoped } from "@/lib/rbac-scope";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { logger } from "@/lib/logger";
@@ -27,10 +27,12 @@ export async function GET(request: NextRequest) {
       (module) => !accessibleSlugs || accessibleSlugs.has(module.slug)
     ).map((module) => {
       const state = stateBySlug.get(module.slug);
+      const isCore = CORE_MODULE_SLUGS.includes(module.slug);
       return {
         ...module,
-        isInstalled: state?.isInstalled ?? module.isInstalled,
-        isEnabled: state?.isEnabled ?? module.isEnabled,
+        isCore,
+        isInstalled: isCore || (state?.isInstalled ?? module.isInstalled),
+        isEnabled: isCore || (state?.isEnabled ?? module.isEnabled),
         installedAt: state?.installedAt?.toISOString() || null,
         installedBy: state?.installedBy || null,
         config: state?.config || {},
