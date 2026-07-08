@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { unwrapListResponse } from "@/lib/api-response";
 
 interface ConditionData {
   field: string;
@@ -101,7 +102,7 @@ export default function AutomationPage() {
       const res = await fetch(`/api/automation?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setRules(data);
+        setRules(unwrapListResponse<AutomationRuleData>(data));
       }
     } catch (error) {
       console.error("Failed to fetch automation rules:", error);

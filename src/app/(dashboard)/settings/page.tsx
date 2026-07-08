@@ -9,6 +9,7 @@ import {
   Phone,
   Mail,
   MessageCircle,
+  Workflow,
   Save,
   Eye,
   EyeOff,
@@ -33,6 +34,8 @@ interface SettingsData {
   aiApiKey: string;
   maxTokens: number;
   temperature: number;
+  monthlyTokenBudget: number;
+  tokenBudgetWarningPercent: number;
   elevenLabsKey: string;
   elevenLabsVoice: string;
   twilioSid: string;
@@ -50,6 +53,10 @@ interface SettingsData {
   whatsappMode: string;
   whatsappApiKey: string;
   whatsappPhone: string;
+  workflowApprovalStaleMinutes: number;
+  ticketCloseAutoReplyEnabled: boolean;
+  ticketCloseRequireApproval: boolean;
+  ticketCloseReplyTemplate: string;
 }
 
 type SectionKey =
@@ -58,7 +65,10 @@ type SectionKey =
   | "voice"
   | "phone"
   | "email"
-  | "whatsapp";
+  | "whatsapp"
+  | "automation";
+
+type SettingsValue = string | number | boolean;
 
 interface TabDef {
   key: SectionKey;
@@ -77,12 +87,21 @@ const tabs: TabDef[] = [
   { key: "phone", label: "Phone (Twilio)", icon: Phone },
   { key: "email", label: "Email (SMTP/IMAP)", icon: Mail },
   { key: "whatsapp", label: "WhatsApp", icon: MessageCircle },
+  { key: "automation", label: "Automation", icon: Workflow },
 ];
 
 // Which fields belong to each section (used for partial saves)
 const sectionFields: Record<SectionKey, (keyof SettingsData)[]> = {
   general: ["businessName", "businessDesc", "welcomeMessage", "tone", "language"],
-  ai: ["aiProvider", "aiModel", "aiApiKey", "maxTokens", "temperature"],
+  ai: [
+    "aiProvider",
+    "aiModel",
+    "aiApiKey",
+    "maxTokens",
+    "temperature",
+    "monthlyTokenBudget",
+    "tokenBudgetWarningPercent",
+  ],
   voice: ["elevenLabsKey", "elevenLabsVoice"],
   phone: ["twilioSid", "twilioToken", "twilioPhone"],
   email: [
@@ -97,6 +116,12 @@ const sectionFields: Record<SectionKey, (keyof SettingsData)[]> = {
     "imapPass",
   ],
   whatsapp: ["whatsappMode", "whatsappApiKey", "whatsappPhone"],
+  automation: [
+    "workflowApprovalStaleMinutes",
+    "ticketCloseAutoReplyEnabled",
+    "ticketCloseRequireApproval",
+    "ticketCloseReplyTemplate",
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -254,6 +279,33 @@ function SelectInput({
   );
 }
 
+function ToggleInput({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-owly-primary/30",
+        checked ? "bg-owly-primary" : "bg-owly-border"
+      )}
+      aria-pressed={checked}
+    >
+      <span
+        className={cn(
+          "inline-block h-5 w-5 rounded-full bg-white shadow transition-transform",
+          checked ? "translate-x-5" : "translate-x-0.5"
+        )}
+      />
+    </button>
+  );
+}
+
 function PasswordInput({
   value,
   onChange,
@@ -361,7 +413,7 @@ function GeneralSection({
   update,
 }: {
   data: SettingsData;
-  update: (field: keyof SettingsData, value: string | number) => void;
+  update: (field: keyof SettingsData, value: SettingsValue) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -425,7 +477,7 @@ function AISection({
   update,
 }: {
   data: SettingsData;
-  update: (field: keyof SettingsData, value: string | number) => void;
+  update: (field: keyof SettingsData, value: SettingsValue) => void;
 }) {
   const modelOptions: Record<string, { value: string; label: string }[]> = {
     openai: [
@@ -502,6 +554,24 @@ function AISection({
           displayValue={data.temperature.toFixed(1)}
         />
       </FormField>
+      <FormField label="Monthly Token Budget" description="Soft monthly budget used for RAG ingestion, embeddings, workflow AI, and conversation AI. Set 0 for no budget.">
+        <NumberInput
+          value={data.monthlyTokenBudget}
+          onChange={(v) => update("monthlyTokenBudget", v)}
+          min={0}
+          max={1000000000}
+        />
+      </FormField>
+      <FormField label="Budget Warning Threshold" description="Show warnings when usage reaches this percentage of the monthly token budget.">
+        <SliderInput
+          value={data.tokenBudgetWarningPercent}
+          onChange={(v) => update("tokenBudgetWarningPercent", v)}
+          min={1}
+          max={100}
+          step={1}
+          displayValue={`${data.tokenBudgetWarningPercent}%`}
+        />
+      </FormField>
     </div>
   );
 }
@@ -511,7 +581,7 @@ function VoiceSection({
   update,
 }: {
   data: SettingsData;
-  update: (field: keyof SettingsData, value: string | number) => void;
+  update: (field: keyof SettingsData, value: SettingsValue) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -543,7 +613,7 @@ function PhoneSection({
   update,
 }: {
   data: SettingsData;
-  update: (field: keyof SettingsData, value: string | number) => void;
+  update: (field: keyof SettingsData, value: SettingsValue) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -582,7 +652,7 @@ function EmailSection({
   update,
 }: {
   data: SettingsData;
-  update: (field: keyof SettingsData, value: string | number) => void;
+  update: (field: keyof SettingsData, value: SettingsValue) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -687,7 +757,7 @@ function WhatsAppSection({
   update,
 }: {
   data: SettingsData;
-  update: (field: keyof SettingsData, value: string | number) => void;
+  update: (field: keyof SettingsData, value: SettingsValue) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -696,7 +766,7 @@ function WhatsAppSection({
           Choose between WhatsApp Web (free, requires QR scan) or the official WhatsApp Business API (paid, more reliable).
         </p>
       </div>
-      <FormField label="Connection Mode" description="Select how Owly connects to WhatsApp.">
+      <FormField label="Connection Mode" description="Select how Cosstigo connects to WhatsApp.">
         <SelectInput
           value={data.whatsappMode}
           onChange={(v) => update("whatsappMode", v)}
@@ -728,6 +798,78 @@ function WhatsAppSection({
   );
 }
 
+function AutomationSection({
+  data,
+  update,
+}: {
+  data: SettingsData;
+  update: (field: keyof SettingsData, value: SettingsValue) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="p-4 rounded-lg bg-owly-primary-50/50 border border-owly-primary/20">
+        <p className="text-sm text-owly-text">
+          Configure lifecycle automation that happens after support work, such as notifying a customer when a ticket is closed or resolved.
+        </p>
+      </div>
+
+      <FormField
+        label="Stale approval warning"
+        description="Flag approvals after this many minutes so agents can prioritize delayed customer responses."
+      >
+        <NumberInput
+          value={data.workflowApprovalStaleMinutes}
+          onChange={(v) => update("workflowApprovalStaleMinutes", v)}
+          min={1}
+          max={10080}
+        />
+      </FormField>
+
+      <FormField
+        label="Ticket close auto-reply"
+        description="Send a customer-facing update on the original conversation when a linked ticket is closed or resolved."
+      >
+        <div className="flex items-center justify-between rounded-lg border border-owly-border bg-owly-bg px-3 py-2">
+          <span className="text-sm text-owly-text">
+            {data.ticketCloseAutoReplyEnabled ? "Enabled" : "Disabled"}
+          </span>
+          <ToggleInput
+            checked={data.ticketCloseAutoReplyEnabled}
+            onChange={(v) => update("ticketCloseAutoReplyEnabled", v)}
+          />
+        </div>
+      </FormField>
+
+      <FormField
+        label="Require approval before sending"
+        description="Queue the ticket close reply for customer service approval instead of sending it immediately."
+      >
+        <div className="flex items-center justify-between rounded-lg border border-owly-border bg-owly-bg px-3 py-2">
+          <span className="text-sm text-owly-text">
+            {data.ticketCloseRequireApproval ? "Approval required" : "Send immediately"}
+          </span>
+          <ToggleInput
+            checked={data.ticketCloseRequireApproval}
+            onChange={(v) => update("ticketCloseRequireApproval", v)}
+          />
+        </div>
+      </FormField>
+
+      <FormField
+        label="Reply template"
+        description="Available variables: {{ticketTitle}}, {{ticketStatus}}, {{resolution}}, {{agentName}}, {{customerName}}."
+      >
+        <TextareaInput
+          value={data.ticketCloseReplyTemplate}
+          onChange={(v) => update("ticketCloseReplyTemplate", v)}
+          rows={6}
+          placeholder='Your ticket "{{ticketTitle}}" has been {{ticketStatus}}.'
+        />
+      </FormField>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main settings page
 // ---------------------------------------------------------------------------
@@ -743,6 +885,8 @@ const defaultSettings: SettingsData = {
   aiApiKey: "",
   maxTokens: 2048,
   temperature: 0.7,
+  monthlyTokenBudget: 1000000,
+  tokenBudgetWarningPercent: 80,
   elevenLabsKey: "",
   elevenLabsVoice: "",
   twilioSid: "",
@@ -760,6 +904,11 @@ const defaultSettings: SettingsData = {
   whatsappMode: "web",
   whatsappApiKey: "",
   whatsappPhone: "",
+  workflowApprovalStaleMinutes: 30,
+  ticketCloseAutoReplyEnabled: true,
+  ticketCloseRequireApproval: false,
+  ticketCloseReplyTemplate:
+    'Your ticket "{{ticketTitle}}" has been {{ticketStatus}}.\n\n{{resolution}}\n\nIf you need more help, reply here and our support team will follow up.',
 };
 
 export default function SettingsPage() {
@@ -793,7 +942,7 @@ export default function SettingsPage() {
       .finally(() => setLoading(false));
   }, [addToast]);
 
-  const update = (field: keyof SettingsData, value: string | number) => {
+  const update = (field: keyof SettingsData, value: SettingsValue) => {
     setData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -828,12 +977,13 @@ export default function SettingsPage() {
     phone: <PhoneSection data={data} update={update} />,
     email: <EmailSection data={data} update={update} />,
     whatsapp: <WhatsAppSection data={data} update={update} />,
+    automation: <AutomationSection data={data} update={update} />,
   };
 
   if (loading) {
     return (
       <>
-        <Header title="Settings" description="Configure your Owly instance" />
+        <Header title="Settings" description="Configure your Cosstigo instance" />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-owly-primary" />
         </div>
@@ -843,7 +993,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <Header title="Settings" description="Configure your Owly instance" />
+      <Header title="Settings" description="Configure your Cosstigo instance" />
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-4xl mx-auto">
           {/* Tab navigation */}
@@ -888,6 +1038,8 @@ export default function SettingsPage() {
                   "Set up email sending and receiving for support tickets."}
                 {activeTab === "whatsapp" &&
                   "Configure WhatsApp integration for messaging support."}
+                {activeTab === "automation" &&
+                  "Control automated replies and customer-facing lifecycle updates."}
               </p>
             </div>
 

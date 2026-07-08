@@ -9,8 +9,11 @@ import {
   CheckCircle2,
   Star,
   Users,
+  Workflow,
+  AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
 // ==================== TYPES ====================
 
@@ -25,6 +28,33 @@ interface AnalyticsData {
   topCategories: { category: string; hitCount: number }[];
   teamPerformance: { member: string; ticketsResolved: number; avgTime: number }[];
   totalConversations: number;
+}
+
+interface AutomationAnalyticsData {
+  totalRuns: number;
+  successRate: number;
+  failedRuns: number;
+  aiFallbackMessages: number;
+  waitingApprovals: number;
+  approvalVolume: number;
+  avgApprovalMinutes: number;
+  savedWorkflowReplies: number;
+  failedActions: {
+    id: string;
+    nodeLabel: string;
+    actionType: string;
+    message: string;
+    createdAt: string;
+    run: { flowName: string; conversationId: string | null };
+  }[];
+  knowledgeGaps: {
+    id: string;
+    conversationId: string;
+    channel: string;
+    customerName: string;
+    preview: string;
+    createdAt: string;
+  }[];
 }
 
 type Period = "7d" | "30d" | "90d";
@@ -125,6 +155,7 @@ function capitalizeFirst(s: string): string {
 
 export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
+  const [automationData, setAutomationData] = useState<AutomationAnalyticsData | null>(null);
   const [period, setPeriod] = useState<Period>("30d");
   const [loading, setLoading] = useState(true);
 
@@ -135,6 +166,10 @@ export default function AnalyticsPage() {
       if (res.ok) {
         const json = await res.json();
         setData(json);
+      }
+      const automationRes = await fetch(`/api/analytics/automation?period=${period}`);
+      if (automationRes.ok) {
+        setAutomationData(await automationRes.json());
       }
     } catch {
       // silently handle
@@ -148,7 +183,8 @@ export default function AnalyticsPage() {
   }, [fetchData]);
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
+    <div className="h-full overflow-y-auto bg-owly-bg">
+      <div className="mx-auto max-w-[1400px] space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -277,6 +313,101 @@ export default function AnalyticsPage() {
 
       {/* Row 4: Team performance table */}
       {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <StatCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : automationData ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              title="Workflow Success Rate"
+              value={`${automationData.successRate}%`}
+              icon={Workflow}
+              iconColor="bg-emerald-50 text-emerald-600"
+            />
+            <StatCard
+              title="AI Fallback Replies"
+              value={automationData.aiFallbackMessages.toLocaleString()}
+              icon={AlertTriangle}
+              iconColor="bg-amber-50 text-amber-600"
+            />
+            <StatCard
+              title="Approval Volume"
+              value={automationData.approvalVolume.toLocaleString()}
+              icon={ShieldCheck}
+              iconColor="bg-violet-50 text-violet-600"
+            />
+            <StatCard
+              title="Saved Workflow Replies"
+              value={automationData.savedWorkflowReplies.toLocaleString()}
+              icon={CheckCircle2}
+              iconColor="bg-blue-50 text-blue-600"
+            />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bg-owly-surface rounded-xl border border-owly-border p-5">
+              <h3 className="text-sm font-semibold text-owly-text">Approval Time</h3>
+              <p className="mt-2 text-3xl font-bold text-owly-text">
+                {formatMinutes(automationData.avgApprovalMinutes)}
+              </p>
+              <p className="mt-1 text-sm text-owly-text-light">
+                Average time for resolved approval steps.
+              </p>
+              <p className="mt-4 text-sm text-owly-text-light">
+                Waiting now: <span className="font-semibold text-owly-text">{automationData.waitingApprovals}</span>
+              </p>
+            </div>
+            <div className="bg-owly-surface rounded-xl border border-owly-border p-5">
+              <h3 className="text-sm font-semibold text-owly-text">Failed Action Report</h3>
+              <div className="mt-3 space-y-2">
+                {automationData.failedActions.length > 0 ? (
+                  automationData.failedActions.slice(0, 5).map((failure) => (
+                    <div key={failure.id} className="rounded-lg border border-red-100 bg-red-50 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-red-900">
+                          {failure.run.flowName || failure.nodeLabel || failure.actionType}
+                        </span>
+                        <span className="text-xs text-red-700">
+                          {formatRelativeTime(failure.createdAt)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-red-700">{failure.message}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-owly-text-light">No failed workflow actions in this period.</p>
+                )}
+              </div>
+            </div>
+            <div className="bg-owly-surface rounded-xl border border-owly-border p-5">
+              <h3 className="text-sm font-semibold text-owly-text">Knowledge Base Gaps</h3>
+              <div className="mt-3 space-y-2">
+                {automationData.knowledgeGaps.length > 0 ? (
+                  automationData.knowledgeGaps.slice(0, 5).map((gap) => (
+                    <div key={gap.id} className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-amber-900">
+                          {gap.customerName || gap.channel}
+                        </span>
+                        <span className="text-xs text-amber-700">
+                          {formatRelativeTime(gap.createdAt)}
+                        </span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs text-amber-700">{gap.preview}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-owly-text-light">No knowledge gaps detected in this period.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {loading ? (
         <TableSkeleton />
       ) : data && data.teamPerformance.length > 0 ? (
         <div className="bg-owly-surface rounded-xl border border-owly-border p-5">
@@ -325,6 +456,7 @@ export default function AnalyticsPage() {
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

@@ -776,7 +776,7 @@ export default function ApiDocsPage() {
     <div className="flex flex-col h-full">
       <Header
         title="API Documentation"
-        description="Integrate Owly with your systems"
+        description="Integrate Cosstigo with your systems"
       />
 
       <div className="flex flex-1 overflow-hidden">

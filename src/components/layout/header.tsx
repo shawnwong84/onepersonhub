@@ -1,9 +1,10 @@
 "use client";
 
-import { Bell, Search, Sun, Moon, LogOut, User } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { Bell, CheckCheck, Search, Sun, Moon, LogOut, User } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useTheme } from "@/lib/hooks/use-theme";
 import { useRouter } from "next/navigation";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
 interface HeaderProps {
   title: string;
@@ -11,22 +12,73 @@ interface HeaderProps {
   actions?: React.ReactNode;
 }
 
+interface NotificationData {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  priority: string;
+  href: string;
+  readAt?: string | null;
+  createdAt: string;
+}
+
 export function Header({ title, description, actions }: HeaderProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationData[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { theme, toggleTheme } = useTheme();
   const router = useRouter();
   const menuRef = useRef<HTMLDivElement>(null);
+  const notificationRef = useRef<HTMLDivElement>(null);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notifications?limit=8");
+      if (!res.ok) return;
+      const data = await res.json();
+      setNotifications(Array.isArray(data.items) ? data.items : []);
+      setUnreadCount(Number(data.unreadCount || 0));
+    } catch (error) {
+      console.error("Failed to fetch notifications:", error);
+    }
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setUserMenuOpen(false);
       }
+      if (
+        notificationRef.current &&
+        !notificationRef.current.contains(e.target as Node)
+      ) {
+        setNotificationOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+
+    const events = new EventSource("/api/realtime?channel=global");
+    events.onmessage = (message) => {
+      try {
+        const event = JSON.parse(message.data);
+        if (event.type === "notification") {
+          fetchNotifications();
+        }
+      } catch {
+        // Ignore heartbeat and malformed events.
+      }
+    };
+
+    return () => events.close();
+  }, [fetchNotifications]);
 
   const handleLogout = async () => {
     await fetch("/api/auth", {
@@ -35,6 +87,41 @@ export function Header({ title, description, actions }: HeaderProps) {
       body: JSON.stringify({ action: "logout" }),
     });
     router.push("/login");
+  };
+
+  const markNotificationRead = async (notification: NotificationData) => {
+    if (!notification.readAt) {
+      setUnreadCount((count) => Math.max(0, count - 1));
+      setNotifications((items) =>
+        items.map((item) =>
+          item.id === notification.id
+            ? { ...item, readAt: new Date().toISOString() }
+            : item
+        )
+      );
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: notification.id }),
+      });
+    }
+
+    setNotificationOpen(false);
+    if (notification.href) {
+      router.push(notification.href);
+    }
+  };
+
+  const markAllRead = async () => {
+    setUnreadCount(0);
+    setNotifications((items) =>
+      items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() }))
+    );
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markAllRead: true }),
+    });
   };
 
   return (
@@ -76,10 +163,94 @@ export function Header({ title, description, actions }: HeaderProps) {
           )}
         </button>
 
-        <button className="relative p-2 text-owly-text-light hover:text-owly-text hover:bg-owly-primary-50 rounded-lg transition-colors">
-          <Bell className="h-5 w-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-owly-danger rounded-full" />
-        </button>
+        <div className="relative" ref={notificationRef}>
+          <button
+            onClick={() => setNotificationOpen((open) => !open)}
+            className="relative p-2 text-owly-text-light hover:text-owly-text hover:bg-owly-primary-50 rounded-lg transition-colors"
+            title="Notifications"
+          >
+            <Bell className="h-5 w-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-owly-danger px-1 text-[10px] font-bold leading-4 text-white">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {notificationOpen && (
+            <div className="absolute right-0 z-50 mt-2 w-96 overflow-hidden rounded-lg border border-owly-border bg-owly-surface shadow-lg animate-scale-in transition-theme">
+              <div className="flex items-center justify-between border-b border-owly-border px-4 py-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-owly-text">Notifications</h3>
+                  <p className="text-xs text-owly-text-light">
+                    {unreadCount === 0
+                      ? "No unread alerts"
+                      : `${unreadCount} unread ${unreadCount === 1 ? "alert" : "alerts"}`}
+                  </p>
+                </div>
+                <button
+                  onClick={markAllRead}
+                  disabled={unreadCount === 0}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-owly-primary hover:bg-owly-primary-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <CheckCheck className="h-3.5 w-3.5" />
+                  Mark read
+                </button>
+              </div>
+
+              <div className="max-h-96 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <Bell className="mx-auto h-8 w-8 text-owly-text-light/40" />
+                    <p className="mt-2 text-sm font-medium text-owly-text">
+                      No notifications yet
+                    </p>
+                    <p className="mt-1 text-xs text-owly-text-light">
+                      Workflow approvals and channel alerts will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  notifications.map((notification) => (
+                    <button
+                      key={notification.id}
+                      onClick={() => markNotificationRead(notification)}
+                      className={cn(
+                        "block w-full border-b border-owly-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-owly-primary-50",
+                        !notification.readAt && "bg-owly-primary-50/50"
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={cn(
+                            "mt-1 h-2 w-2 flex-shrink-0 rounded-full",
+                            notification.readAt
+                              ? "bg-owly-border"
+                              : notification.priority === "urgent"
+                                ? "bg-owly-danger"
+                                : "bg-amber-500"
+                          )}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="truncate text-sm font-semibold text-owly-text">
+                              {notification.title}
+                            </p>
+                            <span className="flex-shrink-0 text-xs text-owly-text-light">
+                              {formatRelativeTime(notification.createdAt)}
+                            </span>
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-xs text-owly-text-light">
+                            {notification.message}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {actions}
 

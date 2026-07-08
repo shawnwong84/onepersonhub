@@ -2,6 +2,7 @@
 
 import { Header } from "@/components/layout/header";
 import { cn } from "@/lib/utils";
+import { unwrapListResponse } from "@/lib/api-response";
 import {
   Users,
   Building2,
@@ -412,7 +413,7 @@ export default function TeamPage() {
       const res = await fetch("/api/team/departments");
       if (res.ok) {
         const data = await res.json();
-        setDepartments(data);
+        setDepartments(unwrapListResponse<Department>(data));
       }
     } catch (err) {
       console.error("Failed to load departments:", err);
@@ -427,7 +428,7 @@ export default function TeamPage() {
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        setMembers(data);
+        setMembers(unwrapListResponse<Member>(data));
       }
     } catch (err) {
       console.error("Failed to load members:", err);

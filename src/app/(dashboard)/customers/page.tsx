@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { cn, formatDate, getStatusColor, getChannelLabel } from "@/lib/utils";
+import { unwrapListResponse } from "@/lib/api-response";
 
 // ---------- Types ----------
 
@@ -42,7 +43,7 @@ interface ConversationData {
   status: string;
   createdAt: string;
   updatedAt: string;
-  _count: { messages: number };
+  _count?: { messages?: number };
 }
 
 interface CustomerData {
@@ -58,7 +59,7 @@ interface CustomerData {
   firstContact: string;
   lastContact: string;
   conversations?: ConversationData[];
-  _count: { notes: number };
+  _count?: { notes?: number };
 }
 
 interface PaginationData {
@@ -149,6 +150,10 @@ export default function CustomersPage() {
     "notes"
   );
 
+  const selectedCustomerNotes = selectedCustomer?.notes ?? [];
+  const selectedCustomerNoteCount =
+    selectedCustomer?._count?.notes ?? selectedCustomerNotes.length;
+
   // ---------- Fetch ----------
 
   const fetchCustomers = useCallback(
@@ -164,8 +169,15 @@ export default function CustomersPage() {
         const res = await fetch(`/api/customers?${params.toString()}`);
         if (res.ok) {
           const data = await res.json();
-          setCustomers(data.customers);
-          setPagination(data.pagination);
+          setCustomers(unwrapListResponse<CustomerData>(data));
+          setPagination(
+            data.pagination ?? {
+              page,
+              limit: 20,
+              total: 0,
+              totalPages: 0,
+            }
+          );
         }
       } catch (error) {
         console.error("Failed to fetch customers:", error);
@@ -658,7 +670,7 @@ export default function CustomersPage() {
                     </span>
                   )}
                   <span className="text-xs text-owly-text-light">
-                    {selectedCustomer._count.notes} notes
+                    {selectedCustomerNoteCount} notes
                   </span>
                 </div>
               </div>
@@ -926,7 +938,7 @@ export default function CustomersPage() {
                       </div>
 
                       {/* Notes Timeline */}
-                      {selectedCustomer.notes.length === 0 ? (
+                      {selectedCustomerNotes.length === 0 ? (
                         <div className="text-center py-8">
                           <StickyNote className="h-8 w-8 text-owly-text-light/40 mx-auto mb-2" />
                           <p className="text-sm text-owly-text-light">
@@ -935,7 +947,7 @@ export default function CustomersPage() {
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          {selectedCustomer.notes.map((note) => (
+                          {selectedCustomerNotes.map((note) => (
                             <div
                               key={note.id}
                               className="bg-owly-bg border border-owly-border rounded-lg p-3"
@@ -1011,7 +1023,7 @@ export default function CustomersPage() {
                                       --
                                     </span>
                                     <span className="text-xs text-owly-text-light">
-                                      {conv._count.messages} messages
+                                      {conv._count?.messages ?? 0} messages
                                     </span>
                                   </div>
                                 </div>

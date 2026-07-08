@@ -29,6 +29,15 @@ interface ChecklistItem {
   icon: React.ElementType;
 }
 
+interface OnboardingStatus {
+  authenticated?: boolean;
+  businessConfigured?: boolean;
+  aiConfigured?: boolean;
+  knowledgeEntries?: number;
+  activeChannels?: number;
+  teamMembers?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -41,26 +50,8 @@ export function OnboardingChecklist() {
   const fetchStatus = useCallback(async () => {
     setLoading(true);
     try {
-      const [authRes, settingsRes, entriesRes, channelsRes, teamRes] =
-        await Promise.all([
-          fetch("/api/auth"),
-          fetch("/api/settings"),
-          fetch("/api/knowledge/entries"),
-          fetch("/api/channels"),
-          fetch("/api/team/members"),
-        ]);
-
-      const auth = authRes.ok ? await authRes.json() : {};
-      const settings = settingsRes.ok ? await settingsRes.json() : {};
-      const entries = entriesRes.ok ? await entriesRes.json() : [];
-      const channels = channelsRes.ok ? await channelsRes.json() : [];
-      const team = teamRes.ok ? await teamRes.json() : [];
-
-      const connectedChannels = Array.isArray(channels)
-        ? channels.filter((c: { isActive: boolean }) => c.isActive)
-        : [];
-
-      const teamMembers = Array.isArray(team) ? team : [];
+      const res = await fetch("/api/onboarding/status");
+      const status: OnboardingStatus = res.ok ? await res.json() : {};
 
       const checklist: ChecklistItem[] = [
         {
@@ -68,7 +59,7 @@ export function OnboardingChecklist() {
           title: "Admin account created",
           description: "Your admin account is set up and ready",
           href: "/admin",
-          completed: auth.authenticated === true,
+          completed: status.authenticated === true,
           icon: UserCheck,
         },
         {
@@ -76,8 +67,7 @@ export function OnboardingChecklist() {
           title: "Business profile configured",
           description: "Set your business name and details",
           href: "/settings",
-          completed:
-            !!settings.businessName && settings.businessName !== "My Business",
+          completed: status.businessConfigured === true,
           icon: Building2,
         },
         {
@@ -85,7 +75,7 @@ export function OnboardingChecklist() {
           title: "AI configured",
           description: "Connect your AI provider with an API key",
           href: "/settings",
-          completed: !!settings.aiApiKey && settings.aiApiKey.length > 0,
+          completed: status.aiConfigured === true,
           icon: Bot,
         },
         {
@@ -93,7 +83,7 @@ export function OnboardingChecklist() {
           title: "Knowledge base entries added",
           description: "Add content for the AI to reference",
           href: "/knowledge",
-          completed: Array.isArray(entries) && entries.length > 0,
+          completed: Number(status.knowledgeEntries || 0) > 0,
           icon: BookOpen,
         },
         {
@@ -101,7 +91,7 @@ export function OnboardingChecklist() {
           title: "At least one channel connected",
           description: "Connect WhatsApp, email, or phone",
           href: "/channels",
-          completed: connectedChannels.length > 0,
+          completed: Number(status.activeChannels || 0) > 0,
           icon: Radio,
         },
         {
@@ -109,7 +99,7 @@ export function OnboardingChecklist() {
           title: "Team members added",
           description: "Add your support team for escalations",
           href: "/team",
-          completed: teamMembers.length > 0,
+          completed: Number(status.teamMembers || 0) > 0,
           icon: Users,
         },
       ];
@@ -158,7 +148,7 @@ export function OnboardingChecklist() {
           <div>
             <h3 className="font-semibold text-owly-text">Getting Started</h3>
             <p className="text-xs text-owly-text-light mt-0.5">
-              Complete these steps to set up Owly
+              Complete these steps to set up Cosstigo
             </p>
           </div>
           <div className="flex items-center gap-3">

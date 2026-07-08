@@ -21,6 +21,7 @@ import {
   getStatusColor,
   getPriorityColor,
 } from "@/lib/utils";
+import { unwrapListResponse } from "@/lib/api-response";
 
 interface TicketData {
   id: string;
@@ -119,7 +120,7 @@ export default function TicketsPage() {
       const res = await fetch(`/api/tickets?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setTickets(data);
+        setTickets(unwrapListResponse<TicketData>(data));
       }
     } catch (error) {
       console.error("Failed to fetch tickets:", error);
@@ -133,7 +134,7 @@ export default function TicketsPage() {
       const res = await fetch("/api/team/departments");
       if (res.ok) {
         const data = await res.json();
-        setDepartments(data);
+        setDepartments(unwrapListResponse<DepartmentData>(data));
       }
     } catch (error) {
       console.error("Failed to fetch departments:", error);

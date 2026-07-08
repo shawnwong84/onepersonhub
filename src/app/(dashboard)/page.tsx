@@ -2,6 +2,7 @@ import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { OnboardingChecklist } from "@/components/ui/onboarding-checklist";
 import { prisma } from "@/lib/prisma";
+import Link from "next/link";
 import {
   MessageSquare,
   Ticket,
@@ -21,6 +22,7 @@ async function getStats() {
     openTickets,
     totalMessages,
     recentConversations,
+    channels,
   ] = await Promise.all([
     prisma.conversation.count(),
     prisma.conversation.count({ where: { status: "active" } }),
@@ -34,6 +36,10 @@ async function getStats() {
         messages: { take: 1, orderBy: { createdAt: "desc" } },
         _count: { select: { messages: true } },
       },
+    }),
+    prisma.channel.findMany({
+      where: { type: { in: ["whatsapp", "email", "phone"] } },
+      select: { type: true, isActive: true, status: true },
     }),
   ]);
 
@@ -54,6 +60,7 @@ async function getStats() {
     totalMessages,
     resolutionRate,
     recentConversations,
+    channels,
   };
 }
 
@@ -63,8 +70,34 @@ const channelIcons: Record<string, React.ElementType> = {
   phone: Phone,
 };
 
+function previewMessage(content: string, channel: string, maxLength = 96) {
+  const withoutEmailHeaders =
+    channel === "email"
+      ? content
+          .replace(/^Subject:\s*[^\n]*(\n+)?/i, "")
+          .replace(/\n{2,}/g, " ")
+      : content;
+  const compact = withoutEmailHeaders.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength
+    ? `${compact.slice(0, maxLength - 1).trim()}...`
+    : compact;
+}
+
 export default async function DashboardPage() {
   const stats = await getStats();
+  const channelStatusByType = new Map(
+    stats.channels.map((channel) => [channel.type, channel])
+  );
+  const overviewChannels = [
+    {
+      type: "whatsapp",
+      name: "WhatsApp",
+      icon: MessageCircle,
+      color: "text-green-600",
+    },
+    { type: "email", name: "Email", icon: Mail, color: "text-blue-600" },
+    { type: "phone", name: "Phone", icon: Phone, color: "text-purple-600" },
+  ];
 
   return (
     <>
@@ -108,7 +141,7 @@ export default async function DashboardPage() {
                 Recent Conversations
               </h3>
             </div>
-            <div className="divide-y divide-owly-border">
+            <div className="divide-y divide-owly-border p-5">
               {stats.recentConversations.length === 0 ? (
                 <div className="px-5 py-12 text-center text-owly-text-light">
                   <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-40" />
@@ -124,9 +157,11 @@ export default async function DashboardPage() {
                     channelIcons[conv.channel] || MessageSquare;
                   const lastMessage = conv.messages[0];
                   return (
-                    <div
+                    <Link
                       key={conv.id}
-                      className="px-5 py-3.5 hover:bg-owly-primary-50/50 transition-colors cursor-pointer"
+                      href={`/conversations?conversationId=${conv.id}`}
+                      prefetch={false}
+                      className="block py-3.5 hover:bg-owly-primary-50/50 transition-colors cursor-pointer"
                     >
                       <div className="flex items-start gap-3">
                         <div className="p-2 rounded-lg bg-owly-primary-50 text-owly-primary mt-0.5">
@@ -147,7 +182,7 @@ export default async function DashboardPage() {
                           </p>
                           {lastMessage && (
                             <p className="text-sm text-owly-text-light mt-1 truncate">
-                              {lastMessage.content}
+                              {previewMessage(lastMessage.content, conv.channel)}
                             </p>
                           )}
                         </div>
@@ -157,7 +192,7 @@ export default async function DashboardPage() {
                           {conv.status}
                         </span>
                       </div>
-                    </div>
+                    </Link>
                   );
                 })
               )}
@@ -172,32 +207,36 @@ export default async function DashboardPage() {
                 </h3>
               </div>
               <div className="p-5 space-y-4">
-                {[
-                  {
-                    name: "WhatsApp",
-                    icon: MessageCircle,
-                    color: "text-green-600",
-                  },
-                  { name: "Email", icon: Mail, color: "text-blue-600" },
-                  { name: "Phone", icon: Phone, color: "text-purple-600" },
-                ].map((channel) => (
-                  <div
-                    key={channel.name}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <channel.icon
-                        className={`h-4 w-4 ${channel.color}`}
-                      />
-                      <span className="text-sm font-medium">
-                        {channel.name}
+                {overviewChannels.map((channel) => {
+                  const status = channelStatusByType.get(channel.type);
+                  const isConnected =
+                    status?.isActive && status.status === "connected";
+
+                  return (
+                    <div
+                      key={channel.name}
+                      className="flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <channel.icon
+                          className={`h-4 w-4 ${channel.color}`}
+                        />
+                        <span className="text-sm font-medium">
+                          {channel.name}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          isConnected
+                            ? "bg-green-50 text-green-600"
+                            : "bg-red-50 text-red-600"
+                        }`}
+                      >
+                        {isConnected ? "Connected" : "Disconnected"}
                       </span>
                     </div>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium">
-                      Disconnected
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

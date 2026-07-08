@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Owly - AI Customer Support",
+  title: "Cosstigo - AI Customer Care",
   description: "Open-source AI-powered customer support agent",
   icons: {
     icon: "/owly.png",
@@ -24,12 +24,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="h-full">
-          <Providers>
-            <ThemeInit />
-            {children}
-          </Providers>
-        </body>
+      <body className="h-full" suppressHydrationWarning>
+        <Providers>
+          <ThemeInit />
+          {children}
+        </Providers>
+      </body>
     </html>
   );
 }

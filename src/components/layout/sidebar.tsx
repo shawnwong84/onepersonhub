@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -22,10 +21,16 @@ import {
   Shield,
   FileCode,
   Webhook,
+  ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  GitBranch,
+  Bot,
+  Coins,
+  Store,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getModuleIcon } from "@/lib/marketplace/icon-map";
 
 interface NavSection {
   title?: string;
@@ -37,6 +42,7 @@ const sections: NavSection[] = [
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
       { name: "Conversations", href: "/conversations", icon: MessageSquare },
+      { name: "Approvals", href: "/approvals", icon: ShieldCheck },
       { name: "Customers", href: "/customers", icon: Contact },
       { name: "Tickets", href: "/tickets", icon: Ticket },
     ],
@@ -46,7 +52,9 @@ const sections: NavSection[] = [
     items: [
       { name: "Knowledge Base", href: "/knowledge", icon: BookOpen },
       { name: "Canned Responses", href: "/canned-responses", icon: Zap },
+      { name: "Agents", href: "/agents", icon: Bot },
       { name: "Automation", href: "/automation", icon: Workflow },
+      { name: "Flows", href: "/flows", icon: GitBranch },
       { name: "Business Hours", href: "/business-hours", icon: Clock },
     ],
   },
@@ -68,12 +76,14 @@ const sections: NavSection[] = [
     title: "Insights",
     items: [
       { name: "Analytics", href: "/analytics", icon: BarChart3 },
+      { name: "Token Usage", href: "/token-usage", icon: Coins },
       { name: "Activity Log", href: "/activity", icon: ScrollText },
     ],
   },
   {
     title: "System",
     items: [
+      { name: "Marketplace", href: "/marketplace", icon: Store },
       { name: "Administration", href: "/admin", icon: Shield },
       { name: "API Docs", href: "/api-docs", icon: FileCode },
       { name: "Settings", href: "/settings", icon: Settings },
@@ -81,9 +91,48 @@ const sections: NavSection[] = [
   },
 ];
 
+interface InstalledModule {
+  slug: string;
+  name: string;
+  iconName: string;
+  isEnabled: boolean;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [installedModules, setInstalledModules] = useState<InstalledModule[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/marketplace/modules?installed=true")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { modules: InstalledModule[] } | null) => {
+        if (!cancelled && data?.modules) {
+          setInstalledModules(data.modules.filter((module) => module.isEnabled));
+        }
+      })
+      .catch(() => {
+        // Nav stays usable without the module list; keep the last known entries.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
+
+  const navSections = useMemo(() => {
+    if (installedModules.length === 0) return sections;
+    const moduleSection: NavSection = {
+      title: "Modules",
+      items: installedModules.map((module) => ({
+        name: module.name,
+        href: `/modules/${module.slug}`,
+        icon: getModuleIcon(module.iconName),
+      })),
+    };
+    const systemIndex = sections.findIndex((section) => section.title === "System");
+    return [...sections.slice(0, systemIndex), moduleSection, ...sections.slice(systemIndex)];
+  }, [installedModules]);
 
   return (
     <aside
@@ -93,23 +142,19 @@ export function Sidebar() {
       )}
     >
       <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
-        <Image
-          src="/owly.png"
-          alt="Owly"
-          width={32}
-          height={32}
-          className="rounded-lg flex-shrink-0"
-        />
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/10 text-sm font-semibold text-white">
+          C
+        </div>
         {!collapsed && (
           <div className="overflow-hidden">
-            <h1 className="text-base font-bold tracking-tight">Owly</h1>
-            <p className="text-[10px] text-white/50">AI Customer Support</p>
+            <h1 className="text-base font-bold tracking-tight">Cosstigo</h1>
+            <p className="text-[10px] text-white/50">AI Customer Care</p>
           </div>
         )}
       </div>
 
       <nav className="flex-1 px-2 py-3 overflow-y-auto space-y-3">
-        {sections.map((section, si) => (
+        {navSections.map((section, si) => (
           <div key={si}>
             {section.title && !collapsed && (
               <p className="px-3 mb-1 text-[10px] uppercase tracking-wider text-white/40 font-medium">
@@ -129,6 +174,7 @@ export function Sidebar() {
                   <Link
                     key={item.name}
                     href={item.href}
+                    prefetch={false}
                     className={cn(
                       "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors",
                       isActive

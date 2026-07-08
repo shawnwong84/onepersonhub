@@ -2,6 +2,7 @@
 
 import { Header } from "@/components/layout/header";
 import { cn } from "@/lib/utils";
+import { unwrapListResponse } from "@/lib/api-response";
 import {
   Key,
   Plus,
@@ -133,7 +134,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/users");
       if (res.ok) {
         const data = await res.json();
-        setUsers(data);
+        setUsers(unwrapListResponse<AdminUser>(data));
       }
     } catch (err) {
       console.error("Failed to fetch users:", err);
@@ -148,7 +149,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/api-keys");
       if (res.ok) {
         const data = await res.json();
-        setApiKeys(data);
+        setApiKeys(unwrapListResponse<ApiKeyItem>(data));
       }
     } catch (err) {
       console.error("Failed to fetch API keys:", err);

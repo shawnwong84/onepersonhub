@@ -17,9 +17,10 @@ import {
   XCircle,
   Eye,
   EyeOff,
+  Workflow,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,9 +32,29 @@ interface ChannelData {
   isActive: boolean;
   config: Record<string, unknown>;
   status: string;
+  workflowSummary?: {
+    activeCount: number;
+    workflows: {
+      id: string;
+      name: string;
+      triggerCount: number;
+      updatedAt: string;
+    }[];
+  };
+  activity?: {
+    lastInboundAt: string | null;
+    lastOutboundAt: string | null;
+  };
 }
 
 type WhatsAppMode = "web" | "api";
+type AutomationMode =
+  | "manual_only"
+  | "workflow_first"
+  | "ai_first"
+  | "approval_required";
+type AutomationFallback = "ai_reply" | "no_reply" | "human_takeover";
+
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -137,6 +158,95 @@ function FieldInput({
   );
 }
 
+function ChannelWorkflowSummary({ channel }: { channel: ChannelData }) {
+  const workflows = channel.workflowSummary?.workflows || [];
+  const activeCount = channel.workflowSummary?.activeCount || 0;
+
+  return (
+    <div className="rounded-lg border border-owly-border bg-owly-bg p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Workflow className="h-4 w-4 text-owly-primary" />
+          <h4 className="text-sm font-semibold text-owly-text">
+            Assigned workflows
+          </h4>
+        </div>
+        <span className="rounded-full bg-owly-primary-50 px-2 py-0.5 text-xs font-semibold text-owly-primary">
+          {activeCount} active
+        </span>
+      </div>
+      {workflows.length === 0 ? (
+        <p className="mt-2 text-xs text-owly-text-light">
+          No active workflows are assigned to this channel.
+        </p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {workflows.slice(0, 3).map((workflow) => (
+            <div
+              key={workflow.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-owly-border bg-owly-surface px-3 py-2"
+            >
+              <span className="min-w-0 truncate text-sm font-medium text-owly-text">
+                {workflow.name}
+              </span>
+              <span className="flex-shrink-0 text-xs text-owly-text-light">
+                {workflow.triggerCount} runs
+              </span>
+            </div>
+          ))}
+          {workflows.length > 3 && (
+            <p className="text-xs text-owly-text-light">
+              +{workflows.length - 3} more active workflow
+              {workflows.length - 3 === 1 ? "" : "s"}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChannelHealthDetails({ channel }: { channel: ChannelData }) {
+  const lastInboundAt = channel.activity?.lastInboundAt;
+  const lastOutboundAt = channel.activity?.lastOutboundAt;
+
+  return (
+    <div className="rounded-lg border border-owly-border bg-owly-bg p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          {channel.status === "connected" ? (
+            <Wifi className="h-4 w-4 text-owly-success" />
+          ) : (
+            <WifiOff className="h-4 w-4 text-owly-danger" />
+          )}
+          <h4 className="text-sm font-semibold text-owly-text">
+            Channel health
+          </h4>
+        </div>
+        <StatusBadge status={channel.status} />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="rounded-lg border border-owly-border bg-owly-surface px-3 py-2">
+          <div className="text-xs font-medium text-owly-text-light">
+            Last inbound
+          </div>
+          <div className="mt-1 text-sm font-semibold text-owly-text">
+            {lastInboundAt ? formatRelativeTime(lastInboundAt) : "No messages"}
+          </div>
+        </div>
+        <div className="rounded-lg border border-owly-border bg-owly-surface px-3 py-2">
+          <div className="text-xs font-medium text-owly-text-light">
+            Last outbound
+          </div>
+          <div className="mt-1 text-sm font-semibold text-owly-text">
+            {lastOutboundAt ? formatRelativeTime(lastOutboundAt) : "No replies"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // WhatsApp Card
 // ---------------------------------------------------------------------------
@@ -149,7 +259,7 @@ function WhatsAppCard({
 }: {
   channel: ChannelData;
   onSave: (type: string, config: Record<string, unknown>, isActive: boolean) => void;
-  onAction: (type: string, action: string) => void;
+  onAction: (type: string, action: string) => Promise<Record<string, unknown> | null>;
   saving: boolean;
 }) {
   const cfg = channel.config as Record<string, string>;
@@ -159,8 +269,15 @@ function WhatsAppCard({
   );
   const [apiKey, setApiKey] = useState(cfg.apiKey || "");
   const [phoneNumber, setPhoneNumber] = useState(cfg.phoneNumber || "");
+  const [automationMode, setAutomationMode] = useState<AutomationMode>(
+    (cfg.automationMode as AutomationMode) || "workflow_first"
+  );
+  const [automationFallback, setAutomationFallback] = useState<AutomationFallback>(
+    (cfg.automationFallback as AutomationFallback) || "ai_reply"
+  );
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isConnected = channel.status === "connected";
 
@@ -174,16 +291,27 @@ function WhatsAppCard({
   const handleConnect = async () => {
     setConnecting(true);
     setQrCode(null);
+    setConnectError(null);
     try {
       const res = await fetch("/api/channels/whatsapp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "connect" }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.qr) setQrCode(data.qr);
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setConnectError(
+          data?.message ||
+            data?.error ||
+            "Failed to connect WhatsApp. Stop the existing browser and try again."
+        );
+        setConnecting(false);
+        return;
       }
+
+      if (data?.qr) setQrCode(data.qr);
+
       // Start polling for QR code / status updates
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {
@@ -201,6 +329,7 @@ function WhatsAppCard({
         } catch { /* ignore polling errors */ }
       }, 3000);
     } catch {
+      setConnectError("Failed to connect WhatsApp. Please try again.");
       setConnecting(false);
     }
   };
@@ -280,14 +409,24 @@ function WhatsAppCard({
                     Phone: {phoneNumber}
                   </p>
                 )}
-                <button
-                  type="button"
-                  onClick={() => onAction("whatsapp", "disconnect")}
-                  className="mt-3 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
-                >
-                  <WifiOff className="h-3.5 w-3.5" />
-                  Disconnect
-                </button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onAction("whatsapp", "reconnect")}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-white border border-green-200 rounded-lg hover:bg-green-50 transition-colors"
+                  >
+                    <Wifi className="h-3.5 w-3.5" />
+                    Reconnect
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onAction("whatsapp", "disconnect")}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                  >
+                    <WifiOff className="h-3.5 w-3.5" />
+                    Disconnect
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="rounded-lg border border-owly-border bg-owly-bg p-6 flex flex-col items-center">
@@ -314,6 +453,11 @@ function WhatsAppCard({
                     ? "Scan this QR code with WhatsApp on your phone to connect"
                     : "Click Connect to generate a QR code"}
                 </p>
+                {connectError && (
+                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                    {connectError}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={handleConnect}
@@ -355,6 +499,50 @@ function WhatsAppCard({
             )}
           </div>
         )}
+
+        <div className="rounded-lg border border-owly-border bg-owly-bg p-3">
+          <h4 className="text-sm font-semibold text-owly-text">
+            Automation behavior
+          </h4>
+          <div className="mt-3 space-y-3">
+            <label className="block">
+              <span className="text-xs font-medium text-owly-text-light">
+                Automation mode
+              </span>
+              <select
+                value={automationMode}
+                onChange={(event) =>
+                  setAutomationMode(event.target.value as AutomationMode)
+                }
+                className="mt-1 w-full px-3 py-2 text-sm border border-owly-border rounded-lg bg-owly-surface text-owly-text focus:outline-none focus:ring-2 focus:ring-owly-primary/30"
+              >
+                <option value="workflow_first">Workflow first</option>
+                <option value="ai_first">AI first</option>
+                <option value="approval_required">Approval required workflows</option>
+                <option value="manual_only">Manual only</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-owly-text-light">
+                Fallback when no workflow matches
+              </span>
+              <select
+                value={automationFallback}
+                onChange={(event) =>
+                  setAutomationFallback(event.target.value as AutomationFallback)
+                }
+                className="mt-1 w-full px-3 py-2 text-sm border border-owly-border rounded-lg bg-owly-surface text-owly-text focus:outline-none focus:ring-2 focus:ring-owly-primary/30"
+              >
+                <option value="ai_reply">AI reply</option>
+                <option value="no_reply">No automatic reply</option>
+                <option value="human_takeover">Save for human follow-up</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <ChannelHealthDetails channel={channel} />
+        <ChannelWorkflowSummary channel={channel} />
       </div>
 
       {/* Footer */}
@@ -365,7 +553,7 @@ function WhatsAppCard({
           onClick={() =>
             onSave(
               "whatsapp",
-              { mode, apiKey, phoneNumber },
+              { mode, apiKey, phoneNumber, automationMode, automationFallback },
               isActive
             )
           }
@@ -395,7 +583,7 @@ function EmailCard({
 }: {
   channel: ChannelData;
   onSave: (type: string, config: Record<string, unknown>, isActive: boolean) => void;
-  onAction: (type: string, action: string) => void;
+  onAction: (type: string, action: string) => Promise<Record<string, unknown> | null>;
   saving: boolean;
 }) {
   const cfg = channel.config as Record<string, string>;
@@ -416,8 +604,12 @@ function EmailCard({
 
   const handleTest = async () => {
     setTestResult(null);
-    onAction("email", "test");
-    setTestResult("Test initiated - check server logs for results");
+    const result = await onAction("email", "test");
+    setTestResult(
+      typeof result?.message === "string"
+        ? result.message
+        : "Email connection test completed"
+    );
     setTimeout(() => setTestResult(null), 4000);
   };
 
@@ -531,6 +723,9 @@ function EmailCard({
             <span className="text-sm text-blue-700">{testResult}</span>
           </div>
         )}
+
+        <ChannelHealthDetails channel={channel} />
+        <ChannelWorkflowSummary channel={channel} />
       </div>
 
       {/* Footer */}
@@ -589,7 +784,7 @@ function PhoneCard({
 }: {
   channel: ChannelData;
   onSave: (type: string, config: Record<string, unknown>, isActive: boolean) => void;
-  onAction: (type: string, action: string) => void;
+  onAction: (type: string, action: string) => Promise<Record<string, unknown> | null>;
   saving: boolean;
 }) {
   const cfg = channel.config as Record<string, string>;
@@ -714,6 +909,9 @@ function PhoneCard({
             <span className="text-sm text-purple-700">{testResult}</span>
           </div>
         )}
+
+        <ChannelHealthDetails channel={channel} />
+        <ChannelWorkflowSummary channel={channel} />
       </div>
 
       {/* Footer */}
@@ -783,8 +981,8 @@ export default function ChannelsPage() {
       setFetchError(null);
       const res = await fetch("/api/channels");
       if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setChannels(data);
+      const channelsData = await res.json();
+      setChannels(channelsData);
     } catch {
       setFetchError("Failed to load channels. Please try refreshing the page.");
       showToast("Failed to load channels", "error");
@@ -822,7 +1020,10 @@ export default function ChannelsPage() {
     }
   };
 
-  const handleAction = async (type: string, action: string) => {
+  const handleAction = async (
+    type: string,
+    action: string
+  ): Promise<Record<string, unknown> | null> => {
     try {
       const res = await fetch(`/api/channels/${type}`, {
         method: "POST",
@@ -840,11 +1041,13 @@ export default function ChannelsPage() {
         );
       }
       showToast(data.message || "Action completed");
+      return data;
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : "Action failed",
         "error"
       );
+      return null;
     }
   };
 
@@ -855,6 +1058,8 @@ export default function ChannelsPage() {
       isActive: false,
       config: {},
       status: "disconnected",
+      workflowSummary: { activeCount: 0, workflows: [] },
+      activity: { lastInboundAt: null, lastOutboundAt: null },
     };
 
   return (

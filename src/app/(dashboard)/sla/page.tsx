@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { unwrapListResponse } from "@/lib/api-response";
 
 interface SLARuleData {
   id: string;
@@ -73,7 +74,7 @@ export default function SLAPage() {
       const res = await fetch("/api/sla");
       if (res.ok) {
         const data = await res.json();
-        setRules(data);
+        setRules(unwrapListResponse<SLARuleData>(data));
       }
     } catch (error) {
       console.error("Failed to fetch SLA rules:", error);
