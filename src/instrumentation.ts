@@ -5,5 +5,8 @@ export async function register() {
 
     const { startReporterHeartbeat } = await import("@/lib/reporter-heartbeat");
     startReporterHeartbeat();
+
+    const { startWorkflowWorker } = await import("@/lib/workflow-worker");
+    startWorkflowWorker();
   }
 }

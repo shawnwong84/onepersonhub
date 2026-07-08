@@ -31,13 +31,16 @@ Add a visual workflow automation builder for support workflows. The builder shou
 - [x] Send approved workflow reply steps to WhatsApp.
 - [x] Store approval decisions and approver identity in workflow run logs.
 - [x] Add persisted run logs.
-- [ ] Add scheduled delay execution.
+- [x] Add scheduled delay execution. (Delay nodes create `WorkflowJob` rows; `processDueWorkflowJobs` resumes them; the in-process worker below executes them automatically.)
 - [ ] Add branch rendering for true/false condition paths.
-- [ ] Add execution adapters for email, MCP tool calls, skill calls, and AI reply steps.
-- [ ] Add ticket status change triggers.
+- [x] Add execution adapters for email and AI reply steps (`send_email`, `ai_reply`, `llm`, `call_api` in `workflow-runtime.ts`). MCP tool calls and skill calls remain open:
+  - [ ] MCP tool call adapter.
+  - [ ] Skill call adapter.
+- [x] Add ticket status change triggers. (Ticket PATCH runs channel workflows on status change.)
 - [x] Auto-reply to the customer when a linked support ticket is closed.
-- [ ] Add email, webhook, and generic message workflow runtime hooks.
-- [ ] Add a production flow execution worker.
+- [x] Add email and generic message workflow runtime hooks (email/WhatsApp channels, module events, reporter agent all call `runChannelWorkflows`). Webhook hook remains open:
+  - [ ] Inbound webhook workflow runtime hook.
+- [x] Add a production flow execution worker. (`src/lib/workflow-worker.ts`, started from `instrumentation.ts`, processes due jobs every 30s.)
 
 ## Node Types
 

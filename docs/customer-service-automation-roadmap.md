@@ -14,17 +14,19 @@ Build Cosstigo into a reliable customer service workspace where channel messages
 - [x] Let agents approve, edit, skip, or reject the next workflow action from the conversation thread.
 - [x] Send notification alerts when a workflow is waiting for approval.
 - [x] Add a notification list in the dashboard header.
-- [ ] Add persisted workflow run logs for every trigger, skipped filter, action, approval, and error.
-- [ ] Add a workflow run timeline panel inside each conversation.
-- [ ] Add channel assignment controls so a workflow can target WhatsApp, email, web chat, webhook, or all channels.
-- [ ] Add per-channel automation settings: workflow-first, AI-first, approval-required, or manual-only.
-- [ ] Add customer service queue views: unassigned, waiting for approval, human takeover, escalated, SLA risk.
-- [ ] Add workflow templates for common support flows.
-- [ ] Add execution adapters for email, MCP tools, skills, AI generation, ticket creation, assignment, and notifications.
+- [x] Add persisted workflow run logs for every trigger, skipped filter, action, approval, and error. (`WorkflowRun`/`WorkflowRunStep` + `workflow-run-logger.ts`.)
+- [x] Add a workflow run timeline panel inside each conversation. (Conversations page loads `/api/conversations/[id]/workflow-runs`.)
+- [x] Add channel assignment controls so a workflow can target WhatsApp, email, or all channels (trigger `channel` filter in the runtime; skipped runs log the mismatch).
+- [x] Add per-channel automation settings: workflow-first, AI-first, approval-required, or manual-only. (`channel-automation.ts`.)
+- [x] Add customer service queue views: unassigned, waiting for approval, human takeover, SLA risk (conversation status filters).
+- [x] Add workflow templates for common support flows. (`workflow-templates.ts` + `/api/flow-templates` install.)
+- [x] Add execution adapters for email, AI generation, ticket creation, assignment, and notifications (`send_email`, `ai_reply`/`llm`, `create_ticket`, `assign_agent`, `send_notification`). MCP tools and skill adapters remain open:
+  - [ ] MCP tool call adapter.
+  - [ ] Skill call adapter.
 - [x] Add ticket lifecycle automation: when support closes a ticket, auto-reply to the customer on the original channel.
-- [ ] Add scheduled delay execution with a background worker.
+- [x] Add scheduled delay execution with a background worker. (`workflow-worker.ts` processes due `WorkflowJob`s every 30s from `instrumentation.ts`.)
 - [ ] Add branch rendering for true/false condition paths.
-- [ ] Add production channel health checks and reconnect controls.
+- [x] Add channel health checks (status badges and health panel on the Channels page). Per-account reconnect controls tracked in the agent-capability roadmap.
 
 ## UI and UX Direction
 
