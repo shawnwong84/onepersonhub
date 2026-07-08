@@ -86,7 +86,9 @@ export const PERMISSIONS = {
   "marketplace:install": ["admin"],
   "marketplace:manage": ["admin"],
   "module:read": ["viewer", "agent", "supervisor", "admin"],
-  "module:write": ["supervisor", "admin"],
+  // Agents can write, but only inside modules they hold a write assignment
+  // for -- per-module enforcement lives in rbac-scope.ts.
+  "module:write": ["agent", "supervisor", "admin"],
 
   // Channels
   "channels:read": ["supervisor", "admin"],

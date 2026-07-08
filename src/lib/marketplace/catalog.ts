@@ -25,6 +25,9 @@ export type MarketplaceModuleCategory =
   | "Productivity"
   | "Monitoring and reporting";
 
+/** Core modules ship with the product: always installed, never uninstallable, readable by every user. */
+export const CORE_MODULE_SLUGS = ["customer-care", "reporter-agent"];
+
 export interface MarketplaceModule {
   slug: string;
   name: string;

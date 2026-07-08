@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 import { validateModuleSignalInput } from "@/lib/module-validation";
 import { dispatchModuleWorkflowEvent } from "@/lib/module-workflow-events";
+import { getAccessibleModuleSlugs, isUnscoped, requireModuleAccess } from "@/lib/rbac-scope";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request, "module:read");
@@ -21,7 +22,15 @@ export async function GET(request: NextRequest) {
     const signalType = searchParams.get("signalType");
 
     const where: Prisma.ModuleSignalWhereInput = {};
-    if (moduleSlug && moduleSlug !== "all") where.module = { slug: moduleSlug };
+    if (!isUnscoped(auth)) {
+      const accessible = await getAccessibleModuleSlugs(auth);
+      where.module = { slug: { in: accessible } };
+    }
+    if (moduleSlug && moduleSlug !== "all") {
+      const denied = await requireModuleAccess(auth, moduleSlug, "read");
+      if (denied) return denied;
+      where.module = { slug: moduleSlug };
+    }
     if (status && status !== "all") where.status = status;
     if (severity && severity !== "all") where.severity = severity;
     if (signalType && signalType !== "all") where.signalType = signalType;
@@ -56,6 +65,9 @@ export async function POST(request: NextRequest) {
     const moduleSlug = typeof body.moduleSlug === "string" ? body.moduleSlug.trim() : "";
     const signalType = typeof body.signalType === "string" ? body.signalType.trim() : "";
     const title = typeof body.title === "string" ? body.title.trim() : "";
+
+    const deniedWrite = await requireModuleAccess(auth, moduleSlug, "write");
+    if (deniedWrite) return deniedWrite;
 
     const moduleState = await prisma.businessModule.findUnique({ where: { slug: moduleSlug } });
     if (!moduleState?.isInstalled) {

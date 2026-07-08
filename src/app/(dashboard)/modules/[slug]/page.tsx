@@ -83,6 +83,7 @@ function ModuleWorkspacePageContent() {
   const [signals, setSignals] = useState<ModuleSignal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [noAccess, setNoAccess] = useState(false);
   const [recordStatus, setRecordStatus] = useState("all");
   const [recordSearch, setRecordSearch] = useState("");
   const [signalStatus, setSignalStatus] = useState("open");
@@ -120,6 +121,11 @@ function ModuleWorkspacePageContent() {
         fetch(`/api/modules/signals?${signalParams.toString()}`),
       ]);
 
+      if (moduleRes.status === 403) {
+        setNoAccess(true);
+        setLoading(false);
+        return;
+      }
       if (!moduleRes.ok) throw new Error("Failed to fetch module");
       if (!recordsRes.ok) throw new Error("Failed to fetch module records");
       if (!signalsRes.ok) throw new Error("Failed to fetch module signals");
@@ -263,6 +269,20 @@ function ModuleWorkspacePageContent() {
     link.download = `${slug}-records.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  if (noAccess) {
+    return (
+      <div className="h-full overflow-y-auto bg-owly-bg p-6">
+        <div className="mx-auto max-w-lg rounded-xl border border-owly-border bg-owly-surface p-10 text-center">
+          <AlertTriangle className="mx-auto h-8 w-8 text-orange-500" />
+          <p className="mt-4 font-semibold text-owly-text">You do not have access to this module</p>
+          <p className="mt-2 text-sm text-owly-text-light">
+            Ask an administrator to assign this module to you from the Team page.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (loading && !moduleData) {

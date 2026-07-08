@@ -17,9 +17,11 @@ import {
   UserCheck,
   UserX,
   Shield,
+  ShieldCheck,
   Briefcase,
   KeyRound,
 } from "lucide-react";
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 
 // ---------------------------------------------------------------------------
@@ -765,6 +767,13 @@ export default function TeamPage() {
               />
             </div>
 
+            <Link
+              href="/team/permissions"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-owly-text border border-owly-border rounded-lg hover:bg-owly-bg transition-colors"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Permissions
+            </Link>
             <button
               onClick={() => {
                 if (activeTab === "departments") {

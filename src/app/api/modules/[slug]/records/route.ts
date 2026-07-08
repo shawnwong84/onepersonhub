@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { requireModuleAccess } from "@/lib/rbac-scope";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
 import { getInstalledModule } from "@/lib/modules";
 import { logger } from "@/lib/logger";
@@ -19,6 +20,8 @@ export async function GET(
   try {
     const { slug } = await params;
     const installed = await getInstalledModule(slug);
+    const denied = await requireModuleAccess(auth, slug, "read");
+    if (denied) return denied;
     if (!installed) return NextResponse.json({ error: "Module not installed" }, { status: 404 });
 
     const { searchParams } = new URL(request.url);
@@ -72,6 +75,8 @@ export async function POST(
   try {
     const { slug } = await params;
     const installed = await getInstalledModule(slug);
+    const denied = await requireModuleAccess(auth, slug, "write");
+    if (denied) return denied;
     if (!installed) return NextResponse.json({ error: "Module not installed" }, { status: 404 });
 
     const body = await request.json();

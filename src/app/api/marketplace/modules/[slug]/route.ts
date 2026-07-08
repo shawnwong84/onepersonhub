@@ -6,6 +6,7 @@ import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { logger } from "@/lib/logger";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 import { ensureModuleScaffold } from "@/lib/module-installer";
+import { requireModuleAccess } from "@/lib/rbac-scope";
 
 type ModuleAction = "install" | "enable" | "disable" | "uninstall" | "configure" | "upgrade";
 
@@ -47,6 +48,9 @@ export async function GET(
     if (!catalog) {
       return NextResponse.json({ error: "Module not found" }, { status: 404 });
     }
+
+    const denied = await requireModuleAccess(auth, slug, "read");
+    if (denied) return denied;
 
     const state = await prisma.businessModule.findUnique({ where: { slug } });
     return NextResponse.json(mergeModuleState(slug, state));

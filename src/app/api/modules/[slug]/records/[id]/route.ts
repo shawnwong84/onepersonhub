@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { requireModuleAccess } from "@/lib/rbac-scope";
 import { getInstalledModule } from "@/lib/modules";
 import { logger } from "@/lib/logger";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
@@ -18,6 +19,8 @@ export async function GET(
   try {
     const { slug, id } = await params;
     const installed = await getInstalledModule(slug);
+    const denied = await requireModuleAccess(auth, slug, "read");
+    if (denied) return denied;
     if (!installed) return NextResponse.json({ error: "Module not installed" }, { status: 404 });
 
     const record = await prisma.moduleRecord.findFirst({
@@ -46,6 +49,8 @@ export async function PATCH(
   try {
     const { slug, id } = await params;
     const installed = await getInstalledModule(slug);
+    const denied = await requireModuleAccess(auth, slug, "write");
+    if (denied) return denied;
     if (!installed) return NextResponse.json({ error: "Module not installed" }, { status: 404 });
 
     const existing = await prisma.moduleRecord.findFirst({

@@ -73,32 +73,34 @@ Goal: members see and touch only what they are assigned; the matrix is explicit 
 
 Scoping rule: `admin` and `supervisor` see everything. `agent` and `viewer` see only assigned modules, assigned conversations, and assigned tickets. Core modules (Phase 4) are visible to everyone with module read permission.
 
-- [ ] Add scoping helpers in `src/lib/rbac.ts`:
-  - [ ] `getAccessibleModuleSlugs(user)` — all slugs for supervisor+, assigned slugs (plus core) for agent/viewer.
-  - [ ] `canAccessModule(user, slug, "read" | "write")`
-  - [ ] `scopeConversations(user, where)` / `scopeTickets(user, where)` — inject `assignedToId` filters for agent/viewer.
-- [ ] Enforce in APIs:
-  - [ ] `/api/modules/[slug]/records*` and `/api/modules/signals*` — 403 outside accessible modules; write requires `write` access.
-  - [ ] `/api/conversations*` list and detail — scoped for agent/viewer.
-  - [ ] `/api/tickets*` list and detail — scoped for agent/viewer.
-  - [ ] `/api/marketplace/modules/[slug]` actions — `marketplace:install` stays supervisor/admin.
-  - [ ] Export endpoints respect the same scope.
-- [ ] Enforce in UI:
-  - [ ] Sidebar Modules section lists only accessible modules.
-  - [ ] Module workspace shows a friendly no-access state on direct URL access.
-  - [ ] Conversations and tickets lists show only scoped rows for agent/viewer.
-- [ ] Permission matrix admin page (`/admin` tab or `/team/permissions`):
-  - [ ] Grid: members × modules with read/write toggles.
-  - [ ] Role summary showing what each RBAC role can do (from `PERMISSIONS`).
-- [ ] Document the full matrix in this file once implemented (role × resource table).
-- [ ] Activity log entries for denied access attempts (throttled).
+- [x] Add scoping helpers in `src/lib/rbac-scope.ts` (separate from the pure `rbac.ts`):
+  - [x] `getAccessibleModuleSlugs(user)` — all slugs for owner/supervisor+, assigned slugs (plus core) for agent/viewer.
+  - [x] `canAccessModule(user, slug, "read" | "write")` — write requires a write assignment; core modules are read-only without one.
+  - [x] `conversationScope(user)` / `ticketScope(user)` — inject `assignedToId` filters for agent/viewer.
+  - [x] `module:write` role permission extended to agents; the assignment layer limits which module.
+- [x] Enforce in APIs:
+  - [x] `/api/modules/[slug]/records*` and `/api/modules/signals*` — 403 outside accessible modules; write requires `write` access.
+  - [x] `/api/conversations*` list and detail — scoped for agent/viewer (detail returns 403 when not assigned).
+  - [x] `/api/tickets*` list and detail — scoped for agent/viewer.
+  - [x] `/api/marketplace/modules` list filtered to accessible modules for scoped users; `[slug]` detail guarded; install stays admin.
+  - [x] `/api/modules/export` respects the same scope.
+- [x] Enforce in UI:
+  - [x] Sidebar Modules section lists only accessible modules (server-filtered marketplace API).
+  - [x] Module workspace shows a friendly no-access state on direct URL access.
+  - [x] Conversations and tickets lists show only scoped rows for agent/viewer.
+- [x] Permission matrix admin page (`/team/permissions`, linked from the Team page):
+  - [x] Grid: members × installed modules, click to cycle none → read → write; core modules marked.
+  - [x] Full-access member list (supervisors/admins).
+  - [x] Role summary table showing what each RBAC role can do (live from `PERMISSIONS`).
+- [x] The matrix page shows the live role × permission table (in-app instead of duplicated in this file).
+- [x] Activity log entries for denied module access attempts (throttled to once per user/module/level per hour).
 
 Acceptance criteria:
 
-- [ ] An agent assigned only to Orders cannot list, read, or write Inventory records via UI or API.
-- [ ] An agent sees only conversations and tickets assigned to them.
-- [ ] Supervisor and admin behavior is unchanged.
-- [ ] The matrix page shows the live truth of who can reach what.
+- [x] An agent assigned only to Orders cannot list, read, or write Inventory/Finance records via UI or API. (Verified: finance read 403, orders read 200; orders write 403 with read assignment, 201 after write upgrade.)
+- [x] An agent sees only conversations and tickets assigned to them. (Verified: list returned 1 assigned conversation; unassigned detail 403.)
+- [x] Supervisor and admin behavior is unchanged.
+- [x] The matrix page shows the live truth of who can reach what.
 
 ## Phase 4: Core Modules
 

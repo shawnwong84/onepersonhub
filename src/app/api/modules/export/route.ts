@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { logger } from "@/lib/logger";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
+import { getAccessibleModuleSlugs, isUnscoped, requireModuleAccess } from "@/lib/rbac-scope";
 
 function csvCell(value: unknown) {
   const text = value === null || value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value);
@@ -18,7 +19,13 @@ export async function GET(request: NextRequest) {
     const moduleSlug = searchParams.get("module") || "all";
     const type = searchParams.get("type") || "records";
 
-    const moduleWhere = moduleSlug !== "all" ? { slug: moduleSlug } : {};
+    let moduleWhere: Record<string, unknown> = moduleSlug !== "all" ? { slug: moduleSlug } : {};
+    if (moduleSlug !== "all") {
+      const denied = await requireModuleAccess(auth, moduleSlug, "read");
+      if (denied) return denied;
+    } else if (!isUnscoped(auth)) {
+      moduleWhere = { slug: { in: await getAccessibleModuleSlugs(auth) } };
+    }
 
     if (type === "signals") {
       const rows = await prisma.moduleSignal.findMany({

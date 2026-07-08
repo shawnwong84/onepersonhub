@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { logger } from "@/lib/logger";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
+import { requireModuleAccess } from "@/lib/rbac-scope";
 
 export async function PATCH(
   request: NextRequest,
@@ -19,6 +20,9 @@ export async function PATCH(
       include: { module: true },
     });
     if (!existing) return NextResponse.json({ error: "Signal not found" }, { status: 404 });
+
+    const denied = await requireModuleAccess(auth, existing.module.slug, "write");
+    if (denied) return denied;
 
     const body = await request.json();
     const metadata =

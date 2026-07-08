@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MARKETPLACE_CATEGORIES, MARKETPLACE_MODULES } from "@/lib/marketplace/catalog";
+import { getAccessibleModuleSlugs, isUnscoped } from "@/lib/rbac-scope";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
@@ -20,8 +21,11 @@ export async function GET(request: NextRequest) {
       },
     });
     const stateBySlug = new Map(installedRows.map((row) => [row.slug, row]));
+    const accessibleSlugs = isUnscoped(auth) ? null : new Set(await getAccessibleModuleSlugs(auth));
 
-    const modules = MARKETPLACE_MODULES.map((module) => {
+    const modules = MARKETPLACE_MODULES.filter(
+      (module) => !accessibleSlugs || accessibleSlugs.has(module.slug)
+    ).map((module) => {
       const state = stateBySlug.get(module.slug);
       return {
         ...module,

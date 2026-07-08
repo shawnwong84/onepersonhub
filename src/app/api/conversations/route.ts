@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
+import { conversationScope } from "@/lib/rbac-scope";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request, "conversations:read");
@@ -51,6 +52,8 @@ export async function GET(request: NextRequest) {
         { customerContact: { contains: search.trim(), mode: "insensitive" } },
       ];
     }
+
+    Object.assign(where, conversationScope(auth));
 
     const [conversations, total] = await Promise.all([
       prisma.conversation.findMany({

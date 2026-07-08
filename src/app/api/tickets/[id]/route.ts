@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { isUnscoped } from "@/lib/rbac-scope";
 import { sendTicketCloseReply } from "@/lib/ticket-automation";
 import { runChannelWorkflows } from "@/lib/workflow-runtime";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
@@ -41,6 +42,13 @@ export async function GET(
       return NextResponse.json(
         { error: "Ticket not found" },
         { status: 404 }
+      );
+    }
+
+    if (!isUnscoped(auth) && ticket.assignedToId !== auth.userId) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "This ticket is not assigned to you." } },
+        { status: 403 }
       );
     }
 

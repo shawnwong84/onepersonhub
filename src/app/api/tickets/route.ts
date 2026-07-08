@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
+import { ticketScope } from "@/lib/rbac-scope";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request, "tickets:read");
@@ -37,6 +38,8 @@ export async function GET(request: NextRequest) {
         { description: { contains: search.trim(), mode: "insensitive" } },
       ];
     }
+
+    Object.assign(where, ticketScope(auth));
 
     const [tickets, total] = await Promise.all([
       prisma.ticket.findMany({
