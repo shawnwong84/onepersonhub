@@ -18,6 +18,7 @@ import {
   UserX,
   Shield,
   Briefcase,
+  KeyRound,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 
@@ -44,8 +45,14 @@ interface Member {
   departmentId: string;
   department: { id: string; name: string };
   isAvailable: boolean;
+  username: string | null;
+  rbacRole: string;
+  isActive: boolean;
+  lastLoginAt: string | null;
   createdAt: string;
 }
+
+const RBAC_ROLES = ["viewer", "agent", "supervisor", "admin"] as const;
 
 // ---------------------------------------------------------------------------
 // Modal wrapper
@@ -365,6 +372,114 @@ function DeleteConfirm({
 // Role badge helper
 // ---------------------------------------------------------------------------
 
+function CredentialsForm({
+  member,
+  onSubmit,
+  onCancel,
+  loading,
+}: {
+  member: Member;
+  onSubmit: (data: { username: string; password?: string; rbacRole: string; isActive: boolean }) => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  const hasLogin = Boolean(member.username);
+  const [username, setUsername] = useState(member.username || "");
+  const [password, setPassword] = useState("");
+  const [rbacRole, setRbacRole] = useState(member.rbacRole || "viewer");
+  const [isActive, setIsActive] = useState(member.isActive);
+
+  const passwordRequired = !hasLogin;
+  const passwordTooShort = password.length > 0 && password.length < 8;
+  const canSubmit =
+    username.trim().length > 0 &&
+    !passwordTooShort &&
+    (!passwordRequired || password.length >= 8);
+
+  return (
+    <div className="space-y-4">
+      {hasLogin && (
+        <p className="text-sm text-owly-text-light">
+          {member.name} last logged in{" "}
+          {member.lastLoginAt ? new Date(member.lastLoginAt).toLocaleString() : "never"}.
+        </p>
+      )}
+      <label className="block">
+        <span className="text-sm font-medium text-owly-text">Username</span>
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="e.g. jane"
+          className="mt-1 w-full h-10 px-3 rounded-lg border border-owly-border bg-owly-bg text-sm text-owly-text outline-none focus:border-owly-primary"
+        />
+      </label>
+      <label className="block">
+        <span className="text-sm font-medium text-owly-text">
+          {hasLogin ? "New password (leave blank to keep current)" : "Password"}
+        </span>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Minimum 8 characters"
+          className="mt-1 w-full h-10 px-3 rounded-lg border border-owly-border bg-owly-bg text-sm text-owly-text outline-none focus:border-owly-primary"
+        />
+        {passwordTooShort && (
+          <span className="mt-1 block text-xs text-owly-danger">Password must be at least 8 characters.</span>
+        )}
+      </label>
+      <label className="block">
+        <span className="text-sm font-medium text-owly-text">Access role</span>
+        <select
+          value={rbacRole}
+          onChange={(e) => setRbacRole(e.target.value)}
+          className="mt-1 w-full h-10 px-3 rounded-lg border border-owly-border bg-owly-bg text-sm text-owly-text outline-none focus:border-owly-primary"
+        >
+          {RBAC_ROLES.map((r) => (
+            <option key={r} value={r}>
+              {r.charAt(0).toUpperCase() + r.slice(1)}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1 block text-xs text-owly-text-light">
+          Viewer: read-only. Agent: work assigned items. Supervisor: manage everything except admin settings. Admin: full access.
+        </span>
+      </label>
+      <label className="flex items-center gap-2 text-sm text-owly-text">
+        <input
+          type="checkbox"
+          checked={isActive}
+          onChange={(e) => setIsActive(e.target.checked)}
+        />
+        Login enabled (unchecking locks this member out immediately)
+      </label>
+      <div className="flex justify-end gap-2 pt-2">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 text-sm font-medium text-owly-text border border-owly-border rounded-lg hover:bg-owly-bg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          disabled={loading || !canSubmit}
+          onClick={() =>
+            onSubmit({
+              username: username.trim(),
+              ...(password ? { password } : {}),
+              rbacRole,
+              isActive,
+            })
+          }
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-owly-primary hover:bg-owly-primary-dark rounded-lg transition-colors disabled:opacity-60"
+        >
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {hasLogin ? "Save credentials" : "Issue credentials"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function getRoleBadge(role: string) {
   const map: Record<string, string> = {
     admin: "bg-purple-100 text-purple-700",
@@ -405,6 +520,8 @@ export default function TeamPage() {
     id: string;
     label: string;
   } | null>(null);
+  const [credsModal, setCredsModal] = useState<Member | null>(null);
+  const [credsError, setCredsError] = useState("");
 
   // ---- Data fetching ----
 
@@ -494,6 +611,33 @@ export default function TeamPage() {
         setMemberModal({ open: false, editing: null });
         await Promise.all([fetchMembers(), fetchDepartments()]);
       }
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCredsSubmit = async (data: {
+    username: string;
+    password?: string;
+    rbacRole: string;
+    isActive: boolean;
+  }) => {
+    if (!credsModal) return;
+    setActionLoading(true);
+    setCredsError("");
+    try {
+      const res = await fetch(`/api/team/members/${credsModal.id}/credentials`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setCredsError(body?.error || "Failed to save credentials");
+        return;
+      }
+      setCredsModal(null);
+      await fetchMembers();
     } finally {
       setActionLoading(false);
     }
@@ -885,6 +1029,29 @@ export default function TeamPage() {
                           <td className="px-5 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <button
+                                onClick={() => {
+                                  setCredsError("");
+                                  setCredsModal(member);
+                                }}
+                                className={cn(
+                                  "p-1.5 rounded-lg transition-colors",
+                                  member.username && member.isActive
+                                    ? "text-green-600 hover:bg-green-50"
+                                    : member.username
+                                    ? "text-owly-danger hover:bg-red-50"
+                                    : "text-owly-text-light hover:text-owly-primary hover:bg-owly-primary-50"
+                                )}
+                                title={
+                                  member.username && member.isActive
+                                    ? `Login enabled (${member.username}, ${member.rbacRole})`
+                                    : member.username
+                                    ? `Login disabled (${member.username})`
+                                    : "Issue login credentials"
+                                }
+                              >
+                                <KeyRound className="h-4 w-4" />
+                              </button>
+                              <button
                                 onClick={() =>
                                   setMemberModal({
                                     open: true,
@@ -950,6 +1117,27 @@ export default function TeamPage() {
           onCancel={() => setMemberModal({ open: false, editing: null })}
           loading={actionLoading}
         />
+      </Modal>
+
+      <Modal
+        open={!!credsModal}
+        onClose={() => setCredsModal(null)}
+        title={credsModal?.username ? `Login for ${credsModal.name}` : `Issue login for ${credsModal?.name || ""}`}
+      >
+        {credsError && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {credsError}
+          </div>
+        )}
+        {credsModal && (
+          <CredentialsForm
+            key={credsModal.id}
+            member={credsModal}
+            onSubmit={handleCredsSubmit}
+            onCancel={() => setCredsModal(null)}
+            loading={actionLoading}
+          />
+        )}
       </Modal>
 
       <Modal

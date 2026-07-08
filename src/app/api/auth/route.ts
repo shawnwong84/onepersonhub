@@ -9,6 +9,7 @@ import {
   getCurrentUser,
   isSetupComplete,
 } from "@/lib/auth";
+import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 
 // POST /api/auth - Login or Setup
 export async function POST(request: NextRequest) {
@@ -76,30 +77,67 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const admin = await prisma.admin.findUnique({ where: { username } });
-    if (!admin) {
+    const admin = await prisma.admin.findUnique({
+      where: { username },
+      omit: { password: false },
+    });
+    if (admin) {
+      const valid = await verifyPassword(password, admin.password);
+      if (!valid) {
+        return NextResponse.json(
+          { error: "Invalid credentials" },
+          { status: 401 }
+        );
+      }
+
+      const token = generateToken(admin.id, admin.role, "owner");
+      const response = NextResponse.json({
+        success: true,
+        user: { id: admin.id, username: admin.username, name: admin.name, role: admin.role, userType: "owner" },
+      });
+      response.cookies.set(setAuthCookie(token));
+      return response;
+    }
+
+    // Team member login
+    const member = await prisma.teamMember.findUnique({
+      where: { username },
+      omit: { password: false },
+    });
+    if (!member || !member.password || !member.isActive) {
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
       );
     }
 
-    const valid = await verifyPassword(password, admin.password);
-    if (!valid) {
+    const memberValid = await verifyPassword(password, member.password);
+    if (!memberValid) {
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
       );
     }
 
-    const token = generateToken(admin.id, admin.role);
-    const cookie = setAuthCookie(token);
+    await prisma.teamMember.update({
+      where: { id: member.id },
+      data: { lastLoginAt: new Date() },
+    });
+    await logActivity({
+      action: "team.member_login",
+      entity: ACTIVITY_ENTITIES.SETTINGS,
+      entityId: member.id,
+      description: `Team member ${member.name} logged in.`,
+      userId: member.id,
+      userName: member.name,
+    });
 
+    const token = generateToken(member.id, member.rbacRole, "member");
     const response = NextResponse.json({
       success: true,
-      user: { id: admin.id, username: admin.username, name: admin.name },
+      user: { id: member.id, username: member.username, name: member.name, role: member.rbacRole, userType: "member" },
     });
-    response.cookies.set(cookie);
+    response.cookies.set(setAuthCookie(token));
     return response;
   }
 

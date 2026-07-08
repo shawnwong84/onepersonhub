@@ -8,6 +8,7 @@ interface AuthContext {
   role: string;
   username: string;
   name: string;
+  userType: "owner" | "member";
   authMethod: "cookie" | "api_key";
 }
 
@@ -33,6 +34,7 @@ async function authenticateApiKey(apiKey: string): Promise<AuthContext | null> {
     role: "admin",
     username: key.name,
     name: key.name,
+    userType: "owner",
     authMethod: "api_key",
   };
 }
@@ -85,6 +87,38 @@ export async function requireAuth(
     );
   }
 
+  if (payload.userType === "member") {
+    const member = await prisma.teamMember.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, username: true, name: true, rbacRole: true, isActive: true },
+    });
+
+    // Deactivation must invalidate existing sessions immediately.
+    if (!member || !member.isActive || !member.username) {
+      return NextResponse.json(
+        { error: { code: "UNAUTHORIZED", message: "Account is not active" } },
+        { status: 401 }
+      );
+    }
+
+    // Check against the live role so role changes apply without re-login.
+    if (permission && !hasPermission(member.rbacRole, permission)) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "Insufficient permissions" } },
+        { status: 403 }
+      );
+    }
+
+    return {
+      userId: member.id,
+      role: member.rbacRole,
+      username: member.username,
+      name: member.name,
+      userType: "member",
+      authMethod: "cookie",
+    };
+  }
+
   if (permission && !hasPermission(payload.role, permission)) {
     return NextResponse.json(
       { error: { code: "FORBIDDEN", message: "Insufficient permissions" } },
@@ -109,6 +143,7 @@ export async function requireAuth(
     role: admin.role,
     username: admin.username,
     name: admin.name,
+    userType: "owner",
     authMethod: "cookie",
   };
 }

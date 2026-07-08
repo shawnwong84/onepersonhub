@@ -28,24 +28,25 @@ Turn the Reporter Agent into a permission-aware chatbot with a proactive heartbe
 
 Goal: team members can log in, and every session knows exactly who the user is and what role they hold.
 
-- [ ] Extend `TeamMember` model:
-  - [ ] `username` (unique, nullable until credentials issued)
-  - [ ] `password` (bcrypt hash, nullable)
-  - [ ] `rbacRole` (`viewer | agent | supervisor | admin`)
-  - [ ] `isActive`
-  - [ ] `lastLoginAt`
-- [ ] Migration for the new columns.
-- [ ] Login route accepts both Admin (owner) and TeamMember credentials; JWT carries `userId`, `userType` (`owner | member`), and `role`.
-- [ ] `requireAuth` / session helpers expose the resolved identity to every route.
-- [ ] Team page: issue/reset member credentials, set RBAC role, deactivate member.
-- [ ] Deactivated members cannot log in; existing sessions are rejected.
-- [ ] Activity log entries: member credential issued, member login, member deactivated.
+- [x] Extend `TeamMember` model:
+  - [x] `username` (unique, nullable until credentials issued)
+  - [x] `password` (bcrypt hash, nullable)
+  - [x] `rbacRole` (`viewer | agent | supervisor | admin`)
+  - [x] `isActive`
+  - [x] `lastLoginAt`
+- [x] Migration for the new columns (`20260708090000_add_team_member_login`).
+- [x] Login route accepts both Admin (owner) and TeamMember credentials; JWT carries `userId`, `userType` (`owner | member`), and `role`.
+- [x] `requireAuth` / session helpers expose the resolved identity to every route; member permission checks use the live role, so role changes apply without re-login.
+- [x] Team page: issue/reset member credentials (key icon per row), set RBAC role, deactivate member.
+- [x] Deactivated members cannot log in; existing sessions are rejected on the next request.
+- [x] Activity log entries: member credential issued/updated, member login, member deactivated.
+- [x] Password hashes are stripped from every API response via a global Prisma omit (login opts back in explicitly).
 
 Acceptance criteria:
 
-- [ ] A member can log in with their own username and password.
-- [ ] The owner account continues to work unchanged.
-- [ ] Deactivating a member locks them out immediately.
+- [x] A member can log in with their own username and password. (Verified in browser: agent member logged in, `userType: member`.)
+- [x] The owner account continues to work unchanged.
+- [x] Deactivating a member locks them out immediately. (Verified: live session got 401 right after deactivation.)
 
 ## Phase 2: Assignment Data Model
 

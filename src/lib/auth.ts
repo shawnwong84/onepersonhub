@@ -28,15 +28,27 @@ export async function verifyPassword(
   return bcrypt.compare(password, hash);
 }
 
-export function generateToken(userId: string, role: string): string {
-  return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+export type UserType = "owner" | "member";
+
+export interface TokenPayload {
+  userId: string;
+  role: string;
+  userType: UserType;
 }
 
-export function verifyToken(
-  token: string
-): { userId: string; role: string } | null {
+export function generateToken(
+  userId: string,
+  role: string,
+  userType: UserType = "owner"
+): string {
+  return jwt.sign({ userId, role, userType }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+}
+
+export function verifyToken(token: string): TokenPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
+    const payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
+    // Tokens issued before member login existed carry no userType.
+    return { ...payload, userType: payload.userType || "owner" };
   } catch {
     return null;
   }
@@ -50,12 +62,28 @@ export async function getCurrentUser() {
   const payload = verifyToken(token);
   if (!payload) return null;
 
+  if (payload.userType === "member") {
+    const member = await prisma.teamMember.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, username: true, name: true, rbacRole: true, isActive: true },
+    });
+    if (!member || !member.isActive || !member.username) return null;
+    return {
+      id: member.id,
+      username: member.username,
+      name: member.name,
+      role: member.rbacRole,
+      userType: "member" as UserType,
+    };
+  }
+
   const admin = await prisma.admin.findUnique({
     where: { id: payload.userId },
     select: { id: true, username: true, name: true, role: true },
   });
+  if (!admin) return null;
 
-  return admin;
+  return { ...admin, userType: "owner" as UserType };
 }
 
 export async function isSetupComplete(): Promise<boolean> {

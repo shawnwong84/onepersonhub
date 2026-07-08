@@ -49,6 +49,7 @@ export async function PUT(
         departmentId,
         ...(typeof isAvailable === "boolean" ? { isAvailable } : {}),
       },
+
       include: {
         department: {
           select: { id: true, name: true },

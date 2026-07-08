@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
         orderBy: { name: "asc" },
         skip,
         take,
+
         include: {
           department: {
             select: { id: true, name: true },
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
         expertise: expertise?.trim() || "",
         departmentId,
       },
+
       include: {
         department: {
           select: { id: true, name: true },

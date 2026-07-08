@@ -88,6 +88,107 @@ describe("POST /api/auth", () => {
     });
   });
 
+  describe("team member login", () => {
+    const memberBase = {
+      id: "member-1",
+      name: "Jane Agent",
+      email: "jane@example.com",
+      username: "jane",
+      rbacRole: "agent",
+      isActive: true,
+      lastLoginAt: null,
+    };
+
+    it("should login an active member with valid credentials", async () => {
+      const { hashPassword } = await import("@/lib/auth");
+      const hashedPassword = await hashPassword("memberpass1");
+
+      mockPrisma.admin.findUnique.mockResolvedValue(null);
+      mockPrisma.teamMember.findUnique.mockResolvedValue({
+        ...memberBase,
+        password: hashedPassword,
+      });
+      mockPrisma.teamMember.update.mockResolvedValue(memberBase);
+
+      const { POST } = await import("@/app/api/auth/route");
+      const request = createRequest("/api/auth", {
+        method: "POST",
+        body: { action: "login", username: "jane", password: "memberpass1" },
+      });
+
+      const response = await POST(request);
+      const data = await parseJsonResponse(response);
+
+      expect(response.status).toBe(200);
+      expect(data.user.userType).toBe("member");
+      expect(data.user.role).toBe("agent");
+      expect(mockPrisma.teamMember.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "member-1" },
+          data: expect.objectContaining({ lastLoginAt: expect.any(Date) }),
+        })
+      );
+    });
+
+    it("should reject a member with a wrong password", async () => {
+      const { hashPassword } = await import("@/lib/auth");
+      const hashedPassword = await hashPassword("memberpass1");
+
+      mockPrisma.admin.findUnique.mockResolvedValue(null);
+      mockPrisma.teamMember.findUnique.mockResolvedValue({
+        ...memberBase,
+        password: hashedPassword,
+      });
+
+      const { POST } = await import("@/app/api/auth/route");
+      const request = createRequest("/api/auth", {
+        method: "POST",
+        body: { action: "login", username: "jane", password: "wrong" },
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(401);
+    });
+
+    it("should reject a deactivated member even with the right password", async () => {
+      const { hashPassword } = await import("@/lib/auth");
+      const hashedPassword = await hashPassword("memberpass1");
+
+      mockPrisma.admin.findUnique.mockResolvedValue(null);
+      mockPrisma.teamMember.findUnique.mockResolvedValue({
+        ...memberBase,
+        isActive: false,
+        password: hashedPassword,
+      });
+
+      const { POST } = await import("@/app/api/auth/route");
+      const request = createRequest("/api/auth", {
+        method: "POST",
+        body: { action: "login", username: "jane", password: "memberpass1" },
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(401);
+    });
+
+    it("should reject a member with no credentials issued", async () => {
+      mockPrisma.admin.findUnique.mockResolvedValue(null);
+      mockPrisma.teamMember.findUnique.mockResolvedValue({
+        ...memberBase,
+        password: null,
+      });
+
+      const { POST } = await import("@/app/api/auth/route");
+      const request = createRequest("/api/auth", {
+        method: "POST",
+        body: { action: "login", username: "jane", password: "whatever" },
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(401);
+    });
+  });
+
   describe("setup action", () => {
     it("should create first admin", async () => {
       const { isSetupComplete } = await import("@/lib/auth");
