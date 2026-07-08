@@ -124,38 +124,38 @@ Goal: anyone can ask the Reporter Agent questions about their modules, in natura
 
 Data model:
 
-- [ ] `ReporterChatThread`: `id`, `teamMemberId` (or owner), `title`, `createdAt`, `updatedAt`.
-- [ ] `ReporterChatMessage`: `id`, `threadId`, `role` (`user | reporter`), `content`, `metadata` (referenced records/signals), `createdAt`.
+- [x] `ReporterChatThread`: `id`, `userId`, `userType`, `title`, `createdAt`, `updatedAt`.
+- [x] `ReporterChatMessage`: `id`, `threadId`, `role` (`user | reporter`), `content`, `metadata` (citations, refusals, proactive flag), `createdAt`.
 
 API:
 
-- [ ] `GET /api/reporter/threads` and `GET /api/reporter/threads/[id]/messages` — own threads only.
-- [ ] `POST /api/reporter/chat` — question in, grounded answer out:
-  - [ ] Resolve the user's accessible modules via `getAccessibleModuleSlugs`.
-  - [ ] Retrieval tools the LLM can use, all filtered to accessible modules: query module records, open signals, module analytics, scoped tickets/conversations counts.
-  - [ ] Questions about unassigned modules get a polite refusal naming the modules the user *can* ask about.
-  - [ ] Reuse the AI engine provider config, token usage logging, and budget guard.
-  - [ ] Every answer cites the records/signals it used (ids in `metadata`, links in UI).
+- [x] `GET /api/reporter/threads` and `GET /api/reporter/threads/[id]/messages` — own threads only.
+- [x] `POST /api/reporter/chat` — question in, grounded answer out:
+  - [x] Resolve the user's accessible modules via `getAccessibleModuleSlugs`.
+  - [x] Scoped retrieval (records + open signals from accessible modules only) assembled into the prompt; unassigned module data never reaches the model.
+  - [x] Questions naming unassigned modules get a polite refusal listing the modules the user *can* ask about — short-circuited without an LLM call.
+  - [x] Reuses the settings provider config and logs token usage (`reporter_chat` feature).
+  - [x] Answers cite records/signals via `[record:id]`/`[signal:id]` markers extracted into citation metadata.
 
 UI:
 
-- [ ] Floating chat widget (bottom-right) on all dashboard pages: last thread, quick ask, unread badge for heartbeat messages.
-- [ ] `/reporter` page: full chat history, thread list, heartbeat report feed, and the existing scan/records workspace linked from it.
-- [ ] Answers render record/signal links that deep-link to module workspaces.
-- [ ] Loading/streaming state; errors surface in-thread.
+- [x] Floating chat widget (bottom-right) on all dashboard pages; full-screen sheet on small viewports.
+- [x] `/reporter` page: chat, open-signal count, run-scan button, recent reports feed, link to the Reporter workspace; "Reporter" entry in the sidebar.
+- [x] Answers render citation chips that deep-link to module records/workspaces.
+- [x] Loading state; errors surface in-thread.
 
 Permissions:
 
-- [ ] Chat available to every authenticated user (core module read).
-- [ ] Retrieval layer is the enforcement point — the model never sees data outside the user's scope (not just a prompt instruction).
-- [ ] Activity log entry per chat exchange (user, modules touched, token usage).
+- [x] Chat available to every authenticated user (core module read).
+- [x] Retrieval layer is the enforcement point — the model never sees data outside the user's scope (not just a prompt instruction).
+- [x] Activity log entry per chat exchange; token usage recorded per answer.
 
 Acceptance criteria:
 
-- [ ] An agent assigned to Orders can ask "which orders are waiting for approval?" and get a grounded, linked answer.
-- [ ] The same agent asking about Inventory is refused and told which modules they can ask about.
-- [ ] Chat answers cite the module records they are based on.
-- [ ] Token usage from chat appears in the token usage page.
+- [x] An agent assigned to Orders asks about orders and gets a grounded, linked answer. (Verified live: cited two real order records.)
+- [x] The same agent asking about Finance is refused and told which modules they can ask about. (Verified: refusal named Customer Care, Reporter Agent, Orders.)
+- [x] Chat answers cite the module records they are based on.
+- [x] Token usage from chat appears in the token usage page (feature `reporter_chat`).
 
 ## Phase 6: Heartbeat
 

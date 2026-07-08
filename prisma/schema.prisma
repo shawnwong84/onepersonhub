@@ -255,6 +255,30 @@ model TeamMember {
   @@index([departmentId])
 }
 
+model ReporterChatThread {
+  id        String                @id @default(uuid())
+  userId    String
+  userType  String                @default("member") // owner | member
+  title     String                @default("Reporter Agent")
+  messages  ReporterChatMessage[]
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  @@index([userId])
+}
+
+model ReporterChatMessage {
+  id        String             @id @default(uuid())
+  threadId  String
+  thread    ReporterChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role      String // user | reporter
+  content   String
+  metadata  Json               @default("{}")
+  createdAt DateTime           @default(now())
+
+  @@index([threadId])
+}
+
 model ModuleAssignment {
   id           String     @id @default(uuid())
   teamMemberId String
