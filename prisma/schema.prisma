@@ -10,37 +10,43 @@ datasource db {
 // ==================== SETTINGS ====================
 
 model Settings {
-  id              String   @id @default("default")
-  businessName    String   @default("My Business")
-  businessDesc    String   @default("")
-  welcomeMessage  String   @default("Hello! How can I help you today?")
-  tone            String   @default("friendly")
-  language        String   @default("auto")
-  aiProvider      String   @default("openai")
-  aiModel         String   @default("gpt-4o-mini")
-  aiApiKey        String   @default("")
-  maxTokens       Int      @default(2048)
-  temperature     Float    @default(0.7)
-  elevenLabsKey   String   @default("")
-  elevenLabsVoice String   @default("")
-  twilioSid       String   @default("")
-  twilioToken     String   @default("")
-  twilioPhone     String   @default("")
-  smtpHost        String   @default("")
-  smtpPort        Int      @default(587)
-  smtpUser        String   @default("")
-  smtpPass        String   @default("")
-  smtpFrom        String   @default("")
-  imapHost        String   @default("")
-  imapPort        Int      @default(993)
-  imapUser        String   @default("")
-  imapPass        String   @default("")
-  whatsappMode    String   @default("web")
-  whatsappApiKey      String   @default("")
-  whatsappPhone       String   @default("")
-  telegramBotToken    String   @default("")
-  createdAt           DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                           String   @id @default("default")
+  businessName                 String   @default("My Business")
+  businessDesc                 String   @default("")
+  welcomeMessage               String   @default("Hello! How can I help you today?")
+  tone                         String   @default("friendly")
+  language                     String   @default("auto")
+  aiProvider                   String   @default("openai")
+  aiModel                      String   @default("gpt-4o-mini")
+  aiApiKey                     String   @default("")
+  maxTokens                    Int      @default(2048)
+  temperature                  Float    @default(0.7)
+  monthlyTokenBudget           Int      @default(1000000)
+  tokenBudgetWarningPercent    Int      @default(80)
+  elevenLabsKey                String   @default("")
+  elevenLabsVoice              String   @default("")
+  twilioSid                    String   @default("")
+  twilioToken                  String   @default("")
+  twilioPhone                  String   @default("")
+  smtpHost                     String   @default("")
+  smtpPort                     Int      @default(587)
+  smtpUser                     String   @default("")
+  smtpPass                     String   @default("")
+  smtpFrom                     String   @default("")
+  imapHost                     String   @default("")
+  imapPort                     Int      @default(993)
+  imapUser                     String   @default("")
+  imapPass                     String   @default("")
+  whatsappMode                 String   @default("web")
+  whatsappApiKey               String   @default("")
+  whatsappPhone                String   @default("")
+  telegramBotToken             String   @default("")
+  workflowApprovalStaleMinutes Int      @default(30)
+  ticketCloseAutoReplyEnabled  Boolean  @default(true)
+  ticketCloseRequireApproval   Boolean  @default(false)
+  ticketCloseReplyTemplate     String   @default("Your ticket \"{{ticketTitle}}\" has been {{ticketStatus}}.\n\n{{resolution}}\n\nIf you need more help, reply here and our support team will follow up.")
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
 }
 
 // ==================== AUTH ====================
@@ -58,31 +64,156 @@ model Admin {
 // ==================== KNOWLEDGE BASE ====================
 
 model Category {
-  id          String           @id @default(uuid())
+  id          String                @id @default(uuid())
   name        String
-  description String           @default("")
-  icon        String           @default("folder")
-  color       String           @default("#4A7C9B")
-  sortOrder   Int              @default(0)
+  description String                @default("")
+  icon        String                @default("folder")
+  color       String                @default("#4A7C9B")
+  sortOrder   Int                   @default(0)
   entries     KnowledgeEntry[]
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  agentScopes AgentKnowledgeScope[]
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
 }
 
 model KnowledgeEntry {
-  id         String   @id @default(uuid())
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  title      String
-  content    String
-  priority   Int      @default(0)
-  isActive   Boolean  @default(true)
-  version    Int      @default(1)
-  metadata   Json     @default("{}")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String                @id @default(uuid())
+  categoryId  String
+  category    Category              @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  title       String
+  content     String
+  priority    Int                   @default(0)
+  isActive    Boolean               @default(true)
+  version     Int                   @default(1)
+  metadata    Json                  @default("{}")
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  chunks      KnowledgeChunk[]
+  agentScopes AgentKnowledgeScope[]
 
   @@index([categoryId])
+}
+
+model KnowledgeDocument {
+  id            String                  @id @default(uuid())
+  categoryId    String?
+  title         String
+  sourceType    String                  @default("upload")
+  fileName      String                  @default("")
+  mimeType      String                  @default("")
+  sourceUrl     String                  @default("")
+  storageBucket String                  @default("")
+  storageKey    String                  @default("")
+  storageUrl    String                  @default("")
+  fileSize      Int                     @default(0)
+  status        String                  @default("queued")
+  extractedText String                  @default("")
+  tableData     Json                    @default("[]")
+  contentHash   String                  @default("")
+  version       Int                     @default(1)
+  tokenEstimate Int                     @default(0)
+  metadata      Json                    @default("{}")
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  runs          KnowledgeIngestionRun[]
+  chunks        KnowledgeChunk[]
+  agentScopes   AgentKnowledgeScope[]
+
+  @@index([categoryId])
+  @@index([sourceType])
+  @@index([status])
+  @@index([storageKey])
+  @@index([contentHash])
+  @@index([createdAt])
+}
+
+model KnowledgeIngestionRun {
+  id             String            @id @default(uuid())
+  documentId     String
+  document       KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  status         String            @default("queued")
+  stage          String            @default("queued")
+  logs           Json              @default("[]")
+  error          String            @default("")
+  extractedChars Int               @default(0)
+  chunkCount     Int               @default(0)
+  tokenEstimate  Int               @default(0)
+  startedAt      DateTime          @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([documentId])
+  @@index([status])
+  @@index([stage])
+  @@index([createdAt])
+}
+
+model KnowledgeChunk {
+  id               String            @id @default(uuid())
+  documentId       String
+  document         KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  knowledgeEntryId String?
+  knowledgeEntry   KnowledgeEntry?   @relation(fields: [knowledgeEntryId], references: [id], onDelete: SetNull)
+  content          String
+  sourceTitle      String            @default("")
+  sourceUrl        String            @default("")
+  pageNumber       Int?
+  sheetName        String            @default("")
+  rowStart         Int?
+  rowEnd           Int?
+  sectionHeading   String            @default("")
+  chunkIndex       Int               @default(0)
+  tokenEstimate    Int               @default(0)
+  metadata         Json              @default("{}")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([documentId])
+  @@index([knowledgeEntryId])
+  @@index([sourceUrl])
+}
+
+model WebsiteSource {
+  id              String    @id @default(uuid())
+  categoryId      String?
+  url             String
+  mode            String    @default("single_url")
+  includePatterns String    @default("")
+  excludePatterns String    @default("")
+  crawlDepth      Int       @default(1)
+  schedule        String    @default("manual")
+  lastStatus      String    @default("never_run")
+  lastCrawledAt   DateTime?
+  metadata        Json      @default("{}")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([categoryId])
+  @@index([url])
+  @@index([lastStatus])
+}
+
+model TokenUsage {
+  id               String   @id @default(uuid())
+  provider         String
+  model            String
+  feature          String
+  operation        String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  embeddingTokens  Int      @default(0)
+  totalTokens      Int      @default(0)
+  estimatedCostUsd Float    @default(0)
+  entityType       String   @default("")
+  entityId         String   @default("")
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now())
+
+  @@index([feature])
+  @@index([operation])
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }
 
 // ==================== TEAM ====================
@@ -94,6 +225,7 @@ model Department {
   email       String       @default("")
   members     TeamMember[]
   tickets     Ticket[]
+  agents      Agent[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 }
@@ -118,22 +250,27 @@ model TeamMember {
 // ==================== CONVERSATIONS ====================
 
 model Conversation {
-  id              String            @id @default(uuid())
-  channel         String
-  customerName    String            @default("Unknown")
-  customerContact String            @default("")
-  customerId      String?
-  customer        Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  status          String            @default("active")
-  satisfaction    Int?
-  summary         String            @default("")
-  metadata        Json              @default("{}")
-  messages        Message[]
-  tickets         Ticket[]
-  tags            ConversationTag[]
-  notes           InternalNote[]
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id               String            @id @default(uuid())
+  channel          String
+  customerName     String            @default("Unknown")
+  customerContact  String            @default("")
+  customerId       String?
+  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  agentId          String?
+  agent            Agent?            @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  channelAccountId String?
+  channelAccount   ChannelAccount?   @relation(fields: [channelAccountId], references: [id], onDelete: SetNull)
+  status           String            @default("active")
+  satisfaction     Int?
+  summary          String            @default("")
+  metadata         Json              @default("{}")
+  messages         Message[]
+  tickets          Ticket[]
+  tags             ConversationTag[]
+  notes            InternalNote[]
+  workflowRuns     WorkflowRun[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([channel])
   @@index([status])
@@ -141,6 +278,8 @@ model Conversation {
   @@index([channel, status])
   @@index([createdAt])
   @@index([customerId])
+  @@index([agentId])
+  @@index([channelAccountId])
 }
 
 model Message {
@@ -228,6 +367,134 @@ model Channel {
   updatedAt DateTime @updatedAt
 }
 
+model Agent {
+  id                     String                @id @default(uuid())
+  name                   String
+  description            String                @default("")
+  status                 String                @default("active")
+  tone                   String                @default("friendly")
+  language               String                @default("auto")
+  systemPrompt           String                @default("")
+  fallbackMode           String                @default("ai_reply")
+  automationMode         String                @default("workflow_first")
+  requireApproval        Boolean               @default(false)
+  useGlobalKnowledge     Boolean               @default(true)
+  escalationDepartmentId String?
+  escalationDepartment   Department?           @relation(fields: [escalationDepartmentId], references: [id], onDelete: SetNull)
+  metadata               Json                  @default("{}")
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  channelAccounts        AgentChannelAccount[]
+  defaultForAccounts     ChannelAccount[]      @relation("DefaultAgentChannelAccounts")
+  knowledgeScopes        AgentKnowledgeScope[]
+  workflows              AgentWorkflow[]
+  tools                  AgentTool[]
+  conversations          Conversation[]
+
+  @@index([status])
+  @@index([escalationDepartmentId])
+}
+
+model ChannelAccount {
+  id             String                @id @default(uuid())
+  channel        String
+  name           String
+  identifier     String
+  status         String                @default("disconnected")
+  isActive       Boolean               @default(true)
+  credentials    Json                  @default("{}")
+  settings       Json                  @default("{}")
+  automationMode String                @default("workflow_first")
+  defaultAgentId String?
+  defaultAgent   Agent?                @relation("DefaultAgentChannelAccounts", fields: [defaultAgentId], references: [id], onDelete: SetNull)
+  lastInboundAt  DateTime?
+  lastOutboundAt DateTime?
+  metadata       Json                  @default("{}")
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  agents         AgentChannelAccount[]
+  conversations  Conversation[]
+
+  @@unique([channel, identifier])
+  @@index([channel])
+  @@index([identifier])
+  @@index([defaultAgentId])
+  @@index([status])
+}
+
+model AgentChannelAccount {
+  id               String         @id @default(uuid())
+  agentId          String
+  agent            Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  channelAccountId String
+  channelAccount   ChannelAccount @relation(fields: [channelAccountId], references: [id], onDelete: Cascade)
+  isPrimary        Boolean        @default(false)
+  priority         Int            @default(100)
+  routingRules     Json           @default("{}")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([agentId, channelAccountId])
+  @@index([agentId])
+  @@index([channelAccountId])
+  @@index([priority])
+}
+
+model AgentKnowledgeScope {
+  id         String             @id @default(uuid())
+  agentId    String
+  agent      Agent              @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  categoryId String?
+  category   Category?          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  entryId    String?
+  entry      KnowledgeEntry?    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  documentId String?
+  document   KnowledgeDocument? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  scopeType  String             @default("include")
+  isActive   Boolean            @default(true)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@index([agentId])
+  @@index([categoryId])
+  @@index([entryId])
+  @@index([documentId])
+}
+
+model AgentWorkflow {
+  id        String   @id @default(uuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  flowId    String
+  flow      Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  priority  Int      @default(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agentId, flowId])
+  @@index([agentId])
+  @@index([flowId])
+  @@index([priority])
+}
+
+model AgentTool {
+  id               String   @id @default(uuid())
+  agentId          String
+  agent            Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  toolType         String
+  toolName         String
+  isEnabled        Boolean  @default(true)
+  requiresApproval Boolean  @default(false)
+  config           Json     @default("{}")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([agentId, toolType, toolName])
+  @@index([agentId])
+  @@index([toolType])
+}
+
 // ==================== SCHEDULES ====================
 
 model Schedule {
@@ -279,8 +546,8 @@ model WebhookDelivery {
 
 model ActivityLog {
   id          String   @id @default(uuid())
-  action      String   // conversation.created, ticket.assigned, settings.updated, etc.
-  entity      String   // conversation, ticket, settings, knowledge, team
+  action      String // conversation.created, ticket.assigned, settings.updated, etc.
+  entity      String // conversation, ticket, settings, knowledge, team
   entityId    String?
   description String
   userId      String?
@@ -293,6 +560,26 @@ model ActivityLog {
 
   @@index([entity])
   @@index([createdAt])
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id             String    @id @default(uuid())
+  type           String
+  title          String
+  message        String
+  priority       String    @default("normal")
+  href           String    @default("")
+  conversationId String?
+  metadata       Json      @default("{}")
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([readAt])
+  @@index([createdAt])
+  @@index([conversationId])
+  @@index([type])
 }
 
 // ==================== SLA RULES ====================
@@ -313,15 +600,15 @@ model SLARule {
 // ==================== CANNED RESPONSES ====================
 
 model CannedResponse {
-  id        String   @id @default(uuid())
-  title     String
-  content   String
-  category  String   @default("General")
-  shortcut  String   @default("") // e.g., /greeting, /refund
-  isActive  Boolean  @default(true)
-  usageCount Int     @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  title      String
+  content    String
+  category   String   @default("General")
+  shortcut   String   @default("") // e.g., /greeting, /refund
+  isActive   Boolean  @default(true)
+  usageCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 // ==================== CUSTOMERS ====================
@@ -362,45 +649,45 @@ model CustomerNote {
 // ==================== AUTOMATION RULES ====================
 
 model AutomationRule {
-  id          String   @id @default(uuid())
-  name        String
-  description String   @default("")
-  type        String   // auto_route, auto_tag, auto_reply, keyword_alert
-  isActive    Boolean  @default(true)
-  conditions  Json     @default("[]") // [{field, operator, value}]
-  actions     Json     @default("[]") // [{type, target, value}]
-  priority    Int      @default(0)
-  triggerCount Int     @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String
+  description  String   @default("")
+  type         String // auto_route, auto_tag, auto_reply, keyword_alert
+  isActive     Boolean  @default(true)
+  conditions   Json     @default("[]") // [{field, operator, value}]
+  actions      Json     @default("[]") // [{type, target, value}]
+  priority     Int      @default(0)
+  triggerCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // ==================== BUSINESS HOURS ====================
 
 model BusinessHours {
-  id        String  @id @default("default")
-  enabled   Boolean @default(false)
-  timezone  String  @default("UTC")
-  monday    String  @default("09:00-18:00") // empty = closed
-  tuesday   String  @default("09:00-18:00")
-  wednesday String  @default("09:00-18:00")
-  thursday  String  @default("09:00-18:00")
-  friday    String  @default("09:00-18:00")
-  saturday  String  @default("")
-  sunday    String  @default("")
-  offlineMessage String @default("We are currently offline. We will get back to you during business hours.")
+  id             String  @id @default("default")
+  enabled        Boolean @default(false)
+  timezone       String  @default("UTC")
+  monday         String  @default("09:00-18:00") // empty = closed
+  tuesday        String  @default("09:00-18:00")
+  wednesday      String  @default("09:00-18:00")
+  thursday       String  @default("09:00-18:00")
+  friday         String  @default("09:00-18:00")
+  saturday       String  @default("")
+  sunday         String  @default("")
+  offlineMessage String  @default("We are currently offline. We will get back to you during business hours.")
 }
 
 // ==================== API KEYS ====================
 
 model ApiKey {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   name      String
-  key       String   @unique
-  isActive  Boolean  @default(true)
+  key       String    @unique
+  isActive  Boolean   @default(true)
   lastUsed  DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([key])
 }
@@ -421,30 +708,202 @@ model InternalNote {
 // ==================== CAMPAIGNS ====================
 
 model Campaign {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   name        String
-  description String   @default("")
-  channel     String   @default("email")
+  description String    @default("")
+  channel     String    @default("email")
   message     String
-  subject     String   @default("")
-  segments    Json     @default("[]")
-  status      String   @default("draft") // draft, scheduled, running, completed, paused
+  subject     String    @default("")
+  segments    Json      @default("[]")
+  status      String    @default("draft") // draft, scheduled, running, completed, paused
   scheduledAt DateTime?
-  sentCount   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  sentCount   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 // ==================== FLOWS ====================
 
 model Flow {
-  id          String   @id @default(uuid())
+  id             String          @id @default(uuid())
+  name           String
+  description    String          @default("")
+  startNodeId    String          @default("")
+  nodes          Json            @default("[]")
+  edges          Json            @default("[]")
+  isActive       Boolean         @default(false)
+  triggerCount   Int             @default(0)
+  runs           WorkflowRun[]
+  agentWorkflows AgentWorkflow[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model WorkflowRun {
+  id             String            @id @default(uuid())
+  flowId         String?
+  flow           Flow?             @relation(fields: [flowId], references: [id], onDelete: SetNull)
+  flowName       String            @default("")
+  conversationId String?
+  conversation   Conversation?     @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  triggerEvent   String
+  channel        String
+  status         String            @default("started")
+  reason         String            @default("")
+  messagePreview String            @default("")
+  metadata       Json              @default("{}")
+  steps          WorkflowRunStep[]
+  startedAt      DateTime          @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([flowId])
+  @@index([conversationId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model WorkflowRunStep {
+  id         String      @id @default(uuid())
+  runId      String
+  run        WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  nodeId     String      @default("")
+  nodeLabel  String      @default("")
+  nodeType   String      @default("")
+  actionType String      @default("")
+  status     String
+  message    String      @default("")
+  metadata   Json        @default("{}")
+  startedAt  DateTime    @default(now())
+  endedAt    DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@index([runId])
+  @@index([status])
+  @@index([nodeId])
+}
+
+model WorkflowJob {
+  id             String    @id @default(uuid())
+  flowId         String
+  flowName       String    @default("")
+  conversationId String
+  triggerEvent   String
+  channel        String
+  customerId     String?
+  message        String    @default("")
+  nextNodeId     String    @default("")
+  status         String    @default("pending")
+  runId          String?
+  dueAt          DateTime
+  lockedAt       DateTime?
+  completedAt    DateTime?
+  lastError      String    @default("")
+  metadata       Json      @default("{}")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, dueAt])
+  @@index([flowId])
+  @@index([conversationId])
+}
+
+// ==================== BUSINESS MODULES ====================
+
+model BusinessModule {
+  id          String         @id @default(uuid())
+  slug        String         @unique
   name        String
-  description String   @default("")
-  startNodeId String   @default("")
-  nodes       Json     @default("[]")
-  isActive    Boolean  @default(false)
-  triggerCount Int     @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  category    String
+  description String         @default("")
+  version     String         @default("0.1.0")
+  isInstalled Boolean        @default(false)
+  isEnabled   Boolean        @default(false)
+  config      Json           @default("{}")
+  metadata    Json           @default("{}")
+  installedAt DateTime?
+  installedBy String?
+  disabledAt  DateTime?
+  records     ModuleRecord[]
+  signals     ModuleSignal[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([category])
+  @@index([isInstalled, isEnabled])
+}
+
+model ModuleRecord {
+  id             String          @id @default(uuid())
+  moduleId       String
+  module         BusinessModule  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  recordType     String
+  title          String
+  status         String          @default("open")
+  priority       String          @default("normal")
+  sourceChannel  String          @default("")
+  sourceMessage  String          @default("")
+  sourceMessageId String?
+  conversationId String?
+  customerId     String?
+  data           Json            @default("{}")
+  reporterState  String          @default("normal")
+  reporterNotes  String          @default("")
+  events         ModuleRecordEvent[]
+  signals        ModuleSignal[]
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([moduleId])
+  @@index([recordType])
+  @@index([status])
+  @@index([priority])
+  @@index([reporterState])
+  @@index([conversationId])
+  @@index([customerId])
+  @@index([sourceMessageId])
+}
+
+model ModuleRecordEvent {
+  id             String       @id @default(uuid())
+  moduleRecordId String
+  moduleRecord   ModuleRecord @relation(fields: [moduleRecordId], references: [id], onDelete: Cascade)
+  action         String
+  description    String
+  metadata       Json         @default("{}")
+  createdBy      String?
+  createdAt      DateTime     @default(now())
+
+  @@index([moduleRecordId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model ModuleSignal {
+  id             String          @id @default(uuid())
+  moduleId       String
+  module         BusinessModule  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  moduleRecordId String?
+  moduleRecord   ModuleRecord?   @relation(fields: [moduleRecordId], references: [id], onDelete: SetNull)
+  signalType     String
+  severity       String          @default("medium")
+  title          String
+  description    String          @default("")
+  status         String          @default("open")
+  metadata       Json            @default("{}")
+  createdBy      String?
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([moduleId])
+  @@index([moduleRecordId])
+  @@index([signalType])
+  @@index([severity])
+  @@index([status])
+  @@index([createdAt])
 }
