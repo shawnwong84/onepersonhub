@@ -247,10 +247,26 @@ model TeamMember {
   isActive     Boolean    @default(true)
   lastLoginAt  DateTime?
   tickets      Ticket[]
+  moduleAssignments     ModuleAssignment[]
+  assignedConversations Conversation[]
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
   @@index([departmentId])
+}
+
+model ModuleAssignment {
+  id           String     @id @default(uuid())
+  teamMemberId String
+  teamMember   TeamMember @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+  moduleSlug   String
+  access       String     @default("read") // read | write
+  assignedBy   String     @default("")
+  createdAt    DateTime   @default(now())
+
+  @@unique([teamMemberId, moduleSlug])
+  @@index([teamMemberId])
+  @@index([moduleSlug])
 }
 
 // ==================== CONVERSATIONS ====================
@@ -266,6 +282,8 @@ model Conversation {
   agent            Agent?            @relation(fields: [agentId], references: [id], onDelete: SetNull)
   channelAccountId String?
   channelAccount   ChannelAccount?   @relation(fields: [channelAccountId], references: [id], onDelete: SetNull)
+  assignedToId     String?
+  assignedTo       TeamMember?       @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
   status           String            @default("active")
   satisfaction     Int?
   summary          String            @default("")
@@ -286,6 +304,7 @@ model Conversation {
   @@index([customerId])
   @@index([agentId])
   @@index([channelAccountId])
+  @@index([assignedToId])
 }
 
 model Message {

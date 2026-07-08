@@ -217,6 +217,9 @@ export async function POST(
       create: createData,
       update: dataByAction[action],
     });
+    if (action === "uninstall") {
+      await prisma.moduleAssignment.deleteMany({ where: { moduleSlug: slug } });
+    }
     const scaffold =
       action === "install" || action === "enable" || action === "upgrade"
         ? await ensureModuleScaffold(catalog, moduleState)

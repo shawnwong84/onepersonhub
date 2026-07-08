@@ -52,20 +52,20 @@ Acceptance criteria:
 
 Goal: record which modules, conversations, and tickets each member is responsible for.
 
-- [ ] Add `ModuleAssignment` model:
-  - [ ] `id`, `teamMemberId`, `moduleSlug`, `access` (`read | write`), `assignedBy`, `createdAt`
-  - [ ] Unique on (`teamMemberId`, `moduleSlug`); indexes on both columns.
-- [ ] Add `Conversation.assignedToId` → TeamMember (formalize what the assignment endpoint writes today).
-- [ ] Reuse existing `Ticket.assignedTo`.
-- [ ] Assignment APIs:
-  - [ ] `GET/POST/DELETE /api/team/members/[id]/modules`
-  - [ ] Conversation and ticket assignment endpoints enforce `conversations:assign` permission.
-- [ ] Activity log entries for every assignment change (who assigned what to whom).
+- [x] Add `ModuleAssignment` model:
+  - [x] `id`, `teamMemberId`, `moduleSlug`, `access` (`read | write`), `assignedBy`, `createdAt`
+  - [x] Unique on (`teamMemberId`, `moduleSlug`); indexes on both columns.
+- [x] Add `Conversation.assignedToId` → TeamMember, with backfill from the metadata JSON the assignment endpoint used to write; the endpoint now writes both.
+- [x] Reuse existing `Ticket.assignedTo`.
+- [x] Assignment APIs:
+  - [x] `GET/POST/DELETE /api/team/members/[id]/modules` (admin `team:update`; validates slug against the catalog; invalid access levels fall back to read).
+  - [x] Conversation assignment enforces `conversations:assign`; ticket assignment continues under `tickets:update`.
+- [x] Activity log entries for every assignment change (who assigned what to whom).
 
 Acceptance criteria:
 
-- [ ] Admin can assign and revoke module access per member.
-- [ ] Assignments survive module disable/re-enable and are removed on uninstall.
+- [x] Admin can assign and revoke module access per member.
+- [x] Assignments survive module disable/re-enable and are removed on uninstall (marketplace uninstall deletes the module's assignments).
 
 ## Phase 3: RBAC Permission Matrix and Enforcement
 

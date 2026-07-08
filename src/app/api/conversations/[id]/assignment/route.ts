@@ -69,6 +69,7 @@ export async function PUT(
       await prisma.conversation.update({
         where: { id },
         data: {
+          assignedToId: null,
           metadata: nextMetadata as Prisma.InputJsonValue,
           updatedAt: new Date(),
         },
@@ -130,6 +131,7 @@ export async function PUT(
       where: { id },
       data: {
         status: "escalated",
+        assignedToId: member.id,
         metadata: nextMetadata as Prisma.InputJsonValue,
         updatedAt: new Date(),
       },
