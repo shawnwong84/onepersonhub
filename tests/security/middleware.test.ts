@@ -15,10 +15,11 @@ describe("Middleware", () => {
 
   function createMiddlewareRequest(
     path: string,
-    options: { cookies?: Record<string, string>; headers?: Record<string, string> } = {}
+    options: { cookies?: Record<string, string>; headers?: Record<string, string>; method?: string } = {}
   ): NextRequest {
     const url = new URL(path, "http://localhost:3000");
     const request = new NextRequest(url, {
+      method: options.method || "GET",
       headers: options.headers || {},
     });
     if (options.cookies) {
@@ -163,6 +164,7 @@ describe("Middleware", () => {
 
       for (let i = 0; i < 5; i++) {
         const request = createMiddlewareRequest("/api/auth", {
+          method: "POST",
           headers: { "x-forwarded-for": "1.2.3.4" },
         });
         const response = middleware(request);
@@ -176,6 +178,7 @@ describe("Middleware", () => {
       // Exhaust the rate limit
       for (let i = 0; i < 5; i++) {
         const request = createMiddlewareRequest("/api/auth", {
+          method: "POST",
           headers: { "x-forwarded-for": "10.0.0.1" },
         });
         middleware(request);
@@ -183,6 +186,7 @@ describe("Middleware", () => {
 
       // 6th request should be blocked
       const request = createMiddlewareRequest("/api/auth", {
+        method: "POST",
         headers: { "x-forwarded-for": "10.0.0.1" },
       });
       const response = middleware(request);
@@ -197,6 +201,7 @@ describe("Middleware", () => {
       // Exhaust rate limit for IP A
       for (let i = 0; i < 6; i++) {
         const request = createMiddlewareRequest("/api/auth", {
+          method: "POST",
           headers: { "x-forwarded-for": "192.168.1.1" },
         });
         middleware(request);
@@ -204,11 +209,25 @@ describe("Middleware", () => {
 
       // IP B should still be allowed
       const request = createMiddlewareRequest("/api/auth", {
+        method: "POST",
         headers: { "x-forwarded-for": "192.168.1.2" },
       });
       const response = middleware(request);
 
       expect(response.status).not.toBe(429);
+    });
+
+    it("should not rate limit auth session reads (GET)", async () => {
+      const { middleware } = await import("@/middleware");
+
+      // Session reads during page bootstrap must never lock users out.
+      for (let i = 0; i < 10; i++) {
+        const request = createMiddlewareRequest("/api/auth", {
+          headers: { "x-forwarded-for": "10.0.0.2" },
+        });
+        const response = middleware(request);
+        expect(response.status).not.toBe(429);
+      }
     });
   });
 

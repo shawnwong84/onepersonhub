@@ -42,52 +42,23 @@ vi.mock("next/headers", () => ({
 }));
 
 function createMockPrismaClient() {
-  const modelMethods = {
-    findUnique: vi.fn(),
-    findFirst: vi.fn(),
-    findMany: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    updateMany: vi.fn(),
-    upsert: vi.fn(),
-    delete: vi.fn(),
-    deleteMany: vi.fn(),
-    count: vi.fn(),
-    aggregate: vi.fn(),
-    groupBy: vi.fn(),
-  };
-
-  const models = [
-    "settings",
-    "admin",
-    "conversation",
-    "message",
-    "ticket",
-    "knowledgeEntry",
-    "category",
-    "department",
-    "teamMember",
-    "tag",
-    "conversationTag",
-    "callLog",
-    "channel",
-    "schedule",
-    "webhook",
-    "webhookDelivery",
-    "activityLog",
-    "sLARule",
-    "cannedResponse",
-    "customer",
-    "customerNote",
-    "automationRule",
-    "businessHours",
-    "apiKey",
-    "internalNote",
-    "campaign",
-    "flow",
+  const methodNames = [
+    "findUnique",
+    "findFirst",
+    "findMany",
+    "create",
+    "createMany",
+    "update",
+    "updateMany",
+    "upsert",
+    "delete",
+    "deleteMany",
+    "count",
+    "aggregate",
+    "groupBy",
   ];
 
-  const client: Record<string, unknown> = {
+  const base: Record<string, unknown> = {
     $queryRaw: vi.fn(),
     $executeRaw: vi.fn(),
     $connect: vi.fn(),
@@ -95,13 +66,22 @@ function createMockPrismaClient() {
     $transaction: vi.fn(),
   };
 
-  for (const model of models) {
-    client[model] = { ...modelMethods };
-    // Each model needs its own vi.fn() instances
-    for (const method of Object.keys(modelMethods)) {
-      (client[model] as Record<string, unknown>)[method] = vi.fn();
-    }
-  }
+  // Models are created lazily so the mock never goes stale as the schema grows.
+  const models = new Map<string, Record<string, unknown>>();
 
-  return client;
+  return new Proxy(base, {
+    get(target, prop) {
+      if (typeof prop !== "string" || prop in target || prop === "then") {
+        return target[prop as string];
+      }
+      if (!models.has(prop)) {
+        const model: Record<string, unknown> = {};
+        for (const method of methodNames) {
+          model[method] = vi.fn();
+        }
+        models.set(prop, model);
+      }
+      return models.get(prop);
+    },
+  });
 }
