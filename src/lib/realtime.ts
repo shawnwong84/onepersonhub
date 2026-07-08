@@ -96,17 +96,18 @@ export function publish(channel: string, event: Omit<EventPayload, "timestamp">)
  */
 export function emitNewMessage(
   conversationId: string,
-  message: { id: string; role: string; content: string }
+  message: {
+    id: string;
+    role: string;
+    content: string;
+    source?: string;
+    createdAt?: string;
+  }
 ): void {
   publish(`conversation:${conversationId}`, {
     type: "message:new",
     conversationId,
     data: message,
-  });
-  publish("global", {
-    type: "message:new",
-    conversationId,
-    data: { conversationId, messageId: message.id, role: message.role },
   });
 }
 
@@ -118,11 +119,12 @@ export function emitTyping(
   userName: string,
   isTyping: boolean
 ): void {
-  publish(`conversation:${conversationId}`, {
+  const event = {
     type: isTyping ? "typing:start" : "typing:stop",
     conversationId,
     data: { userName },
-  });
+  } as const;
+  publish(`conversation:${conversationId}`, event);
 }
 
 /**
@@ -136,6 +138,16 @@ export function emitConversationUpdate(
     type: "conversation:updated",
     conversationId,
     data: changes,
+  });
+}
+
+/**
+ * Helper: Emit a notification event.
+ */
+export function emitNotification(notification: Record<string, unknown>): void {
+  publish("global", {
+    type: "notification",
+    data: notification,
   });
 }
 

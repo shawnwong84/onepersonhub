@@ -154,6 +154,8 @@ export const updateSettingsSchema = z.object({
   aiApiKey: z.string().max(500).optional(),
   maxTokens: z.number().int().min(100).max(128000).optional(),
   temperature: z.number().min(0).max(2).optional(),
+  monthlyTokenBudget: z.number().int().min(0).max(1000000000).optional(),
+  tokenBudgetWarningPercent: z.number().int().min(1).max(100).optional(),
   smtpHost: z.string().max(500).optional(),
   smtpPort: z.number().int().min(1).max(65535).optional(),
   smtpUser: z.string().max(300).optional(),
@@ -171,6 +173,10 @@ export const updateSettingsSchema = z.object({
   whatsappMode: z.string().max(50).optional(),
   whatsappApiKey: z.string().max(500).optional(),
   whatsappPhone: z.string().max(50).optional(),
+  workflowApprovalStaleMinutes: z.number().int().min(1).max(10080).optional(),
+  ticketCloseAutoReplyEnabled: z.boolean().optional(),
+  ticketCloseRequireApproval: z.boolean().optional(),
+  ticketCloseReplyTemplate: z.string().max(5000).optional(),
 }).strict();
 
 // Canned Responses

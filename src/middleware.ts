@@ -58,6 +58,27 @@ function getClientIp(request: NextRequest): string {
   );
 }
 
+function getApiRateLimit(pathname: string, method: string) {
+  if (pathname.startsWith("/api/realtime")) {
+    return {
+      keyPrefix: "realtime",
+      config: RATE_LIMITS.realtime,
+    };
+  }
+
+  if (method === "GET" || method === "HEAD") {
+    return {
+      keyPrefix: "api-read",
+      config: RATE_LIMITS.apiRead,
+    };
+  }
+
+  return {
+    keyPrefix: "api-write",
+    config: RATE_LIMITS.apiWrite,
+  };
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const requestId = request.headers.get("x-request-id") || generateRequestId();
@@ -91,8 +112,9 @@ export function middleware(request: NextRequest) {
     return addHeaders(NextResponse.next(), requestId);
   }
 
-  // Rate limiting for auth endpoint
-  if (pathname.startsWith("/api/auth")) {
+  // Rate limiting for auth mutations. Session reads are handled by the
+  // dashboard read budget so normal page bootstrapping does not lock users out.
+  if (pathname.startsWith("/api/auth") && request.method !== "GET") {
     const ip = getClientIp(request);
     const rateResult = checkRateLimit(`auth:${ip}`, RATE_LIMITS.auth);
 
@@ -116,11 +138,12 @@ export function middleware(request: NextRequest) {
     return addHeaders(NextResponse.next(), requestId);
   }
 
-  // General API rate limiting
+  // API rate limiting
   let apiRateInfo: { limit: number; remaining: number; resetAt: number } | undefined;
   if (pathname.startsWith("/api/")) {
     const ip = getClientIp(request);
-    const rateResult = checkRateLimit(`api:${ip}`, RATE_LIMITS.api);
+    const { keyPrefix, config } = getApiRateLimit(pathname, request.method);
+    const rateResult = checkRateLimit(`${keyPrefix}:${ip}`, config);
 
     if (!rateResult.allowed) {
       const response = NextResponse.json(
@@ -128,11 +151,11 @@ export function middleware(request: NextRequest) {
         { status: 429 }
       );
       response.headers.set("Retry-After", String(Math.ceil((rateResult.resetAt - Date.now()) / 1000)));
-      return addHeaders(response, requestId, { limit: RATE_LIMITS.api.maxRequests, remaining: 0, resetAt: rateResult.resetAt });
+      return addHeaders(response, requestId, { limit: config.maxRequests, remaining: 0, resetAt: rateResult.resetAt });
     }
 
     apiRateInfo = {
-      limit: RATE_LIMITS.api.maxRequests,
+      limit: config.maxRequests,
       remaining: rateResult.remaining,
       resetAt: rateResult.resetAt,
     };

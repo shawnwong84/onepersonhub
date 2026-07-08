@@ -52,6 +52,12 @@ export const PERMISSIONS = {
   "automation:update": ["supervisor", "admin"],
   "automation:delete": ["admin"],
 
+  // AI Agents
+  "agents:read": ["viewer", "agent", "supervisor", "admin"],
+  "agents:create": ["supervisor", "admin"],
+  "agents:update": ["supervisor", "admin"],
+  "agents:delete": ["admin"],
+
   // Webhooks
   "webhooks:read": ["supervisor", "admin"],
   "webhooks:create": ["admin"],
@@ -75,9 +81,20 @@ export const PERMISSIONS = {
   // Activity Log
   "activity:read": ["supervisor", "admin"],
 
+  // Marketplace
+  "marketplace:read": ["viewer", "agent", "supervisor", "admin"],
+  "marketplace:install": ["admin"],
+  "marketplace:manage": ["admin"],
+  "module:read": ["viewer", "agent", "supervisor", "admin"],
+  "module:write": ["supervisor", "admin"],
+
   // Channels
   "channels:read": ["supervisor", "admin"],
   "channels:update": ["admin"],
+  "channel-accounts:read": ["viewer", "agent", "supervisor", "admin"],
+  "channel-accounts:create": ["admin"],
+  "channel-accounts:update": ["admin"],
+  "channel-accounts:delete": ["admin"],
 
   // SLA
   "sla:read": ["viewer", "agent", "supervisor", "admin"],

@@ -43,6 +43,81 @@ export interface Flow {
   isActive: boolean;
 }
 
+export interface CanvasFlow {
+  id: string;
+  name: string;
+  description: string;
+  startNodeId: string;
+  nodes: CanvasFlowNode[];
+  edges: CanvasFlowEdge[];
+  isActive: boolean;
+}
+
+export interface CanvasFlowNode {
+  id: string;
+  type?: string;
+  position?: { x: number; y: number };
+  data?: {
+    label?: string;
+    nodeType?: "trigger" | "condition" | "action" | "approval" | "delay" | "llm" | "end";
+    triggerEvent?: string;
+    conditionField?: string;
+    conditionOperator?: string;
+    conditionValue?: string;
+    actionType?: string;
+    actionValue?: string;
+    channel?: string;
+    filters?: Record<string, string>;
+    apiUrl?: string;
+    apiMethod?: string;
+    apiQueryParams?: string;
+    apiHeaders?: string;
+    apiBodyMode?: string;
+    apiBody?: string;
+    ticketTitle?: string;
+    ticketDescription?: string;
+    ticketPriority?: string;
+    moduleSlug?: string;
+    moduleRecordType?: string;
+    moduleRecordTitle?: string;
+    moduleRecordStatus?: string;
+    moduleRecordPriority?: string;
+    moduleRecordData?: string;
+    moduleSignalType?: string;
+    moduleSignalSeverity?: string;
+    moduleSignalTitle?: string;
+    moduleSignalDescription?: string;
+    moduleSignalData?: string;
+    moduleRecordId?: string;
+    moduleRecordSearch?: string;
+    moduleRecordUpdateData?: string;
+    moduleSignalId?: string;
+    mcpServer?: string;
+    mcpTool?: string;
+    mcpInput?: string;
+    skillName?: string;
+    skillPrompt?: string;
+    llmInstruction?: string;
+    llmPrompt?: string;
+    llmOutputMode?: string;
+    replyText?: string;
+    stepCategory?: string;
+    approvalTitle?: string;
+    approvalInstructions?: string;
+    approvalTarget?: string;
+    delayAmount?: number;
+    delayUnit?: string;
+  };
+}
+
+export interface CanvasFlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+}
+
 interface FlowContext {
   conversationId: string;
   customerMessage: string;
@@ -156,9 +231,14 @@ function interpolate(text: string, variables: Record<string, string>): string {
 /**
  * Validate a flow definition.
  */
-export function validateFlow(flow: Flow): { valid: boolean; errors: string[] } {
+export function validateFlow(flow: Flow | CanvasFlow): { valid: boolean; errors: string[] } {
+  if ("edges" in flow && Array.isArray(flow.edges)) {
+    return validateCanvasFlow(flow);
+  }
+
   const errors: string[] = [];
-  const nodeIds = new Set(flow.nodes.map((n) => n.id));
+  const nodes = flow.nodes as FlowNode[];
+  const nodeIds = new Set(nodes.map((n) => n.id));
 
   if (!flow.startNodeId) {
     errors.push("Flow must have a start node");
@@ -166,7 +246,7 @@ export function validateFlow(flow: Flow): { valid: boolean; errors: string[] } {
     errors.push("Start node ID does not exist");
   }
 
-  for (const node of flow.nodes) {
+  for (const node of nodes) {
     if (node.nextNodeId && !nodeIds.has(node.nextNodeId)) {
       errors.push(`Node ${node.id}: nextNodeId "${node.nextNodeId}" does not exist`);
     }
@@ -194,7 +274,7 @@ export function validateFlow(flow: Flow): { valid: boolean; errors: string[] } {
     const id = queue.shift()!;
     if (reachable.has(id)) continue;
     reachable.add(id);
-    const node = flow.nodes.find((n) => n.id === id);
+    const node = nodes.find((n) => n.id === id);
     if (!node) continue;
     if (node.nextNodeId) queue.push(node.nextNodeId);
     if (node.options) node.options.forEach((o) => queue.push(o.nextNodeId));
@@ -204,9 +284,132 @@ export function validateFlow(flow: Flow): { valid: boolean; errors: string[] } {
     }
   }
 
-  const unreachable = flow.nodes.filter((n) => !reachable.has(n.id));
+  const unreachable = nodes.filter((n) => !reachable.has(n.id));
   if (unreachable.length > 0) {
     errors.push(`Unreachable nodes: ${unreachable.map((n) => n.id).join(", ")}`);
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+function validateCanvasFlow(flow: CanvasFlow): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const nodes = Array.isArray(flow.nodes) ? flow.nodes : [];
+  const edges = Array.isArray(flow.edges) ? flow.edges : [];
+  const nodeIds = new Set(nodes.map((node) => node.id));
+
+  if (nodes.length === 0) {
+    errors.push("Flow must contain at least one node");
+  }
+
+  if (!flow.startNodeId) {
+    errors.push("Flow must have a start node");
+  } else if (!nodeIds.has(flow.startNodeId)) {
+    errors.push("Start node ID does not exist");
+  }
+
+  for (const edge of edges) {
+    if (!nodeIds.has(edge.source)) {
+      errors.push(`Edge ${edge.id}: source node does not exist`);
+    }
+    if (!nodeIds.has(edge.target)) {
+      errors.push(`Edge ${edge.id}: target node does not exist`);
+    }
+  }
+
+  const outgoing = new Map<string, CanvasFlowEdge[]>();
+  const incoming = new Map<string, CanvasFlowEdge[]>();
+
+  for (const edge of edges) {
+    outgoing.set(edge.source, [...(outgoing.get(edge.source) || []), edge]);
+    incoming.set(edge.target, [...(incoming.get(edge.target) || []), edge]);
+  }
+
+  for (const node of nodes) {
+    const nodeType = node.data?.nodeType;
+
+    if (!nodeType) {
+      errors.push(`Node ${node.id}: node type is required`);
+      continue;
+    }
+
+    if (node.id !== flow.startNodeId && (incoming.get(node.id) || []).length === 0) {
+      errors.push(`Node ${node.id}: node is not connected from another node`);
+    }
+
+    if (nodeType !== "end" && (outgoing.get(node.id) || []).length === 0) {
+      errors.push(`Node ${node.id}: non-end node needs an outgoing edge`);
+    }
+
+    if (nodeType === "trigger" && !node.data?.triggerEvent) {
+      errors.push(`Node ${node.id}: trigger event is required`);
+    }
+
+    if (nodeType === "condition") {
+      if (!node.data?.conditionField) errors.push(`Node ${node.id}: condition field is required`);
+      if (!node.data?.conditionOperator) errors.push(`Node ${node.id}: condition operator is required`);
+      if (!node.data?.conditionValue) errors.push(`Node ${node.id}: condition value is required`);
+    }
+
+    if (nodeType === "llm") {
+      if (!node.data?.llmPrompt) {
+        errors.push(`Node ${node.id}: LLM prompt is required`);
+      }
+    }
+
+    if (nodeType === "action") {
+      if (!node.data?.actionType) errors.push(`Node ${node.id}: action type is required`);
+      if (node.data?.actionType === "reply_customer" && !node.data?.replyText) {
+        errors.push(`Node ${node.id}: reply text is required`);
+      }
+      if (node.data?.actionType === "call_api" && !node.data?.apiUrl) {
+        errors.push(`Node ${node.id}: API URL is required`);
+      }
+      if (node.data?.actionType === "call_mcp_tool" && !node.data?.mcpTool) {
+        errors.push(`Node ${node.id}: MCP tool name is required`);
+      }
+      if (node.data?.actionType === "run_skill" && !node.data?.skillName) {
+        errors.push(`Node ${node.id}: skill name is required`);
+      }
+      if (
+        !["reply_customer", "call_api", "call_mcp_tool", "run_skill", "ai_reply"].includes(
+          node.data?.actionType || ""
+        ) &&
+        !node.data?.actionValue
+      ) {
+        errors.push(`Node ${node.id}: action value is required`);
+      }
+    }
+
+    if (nodeType === "approval") {
+      if (!node.data?.approvalTitle) errors.push(`Node ${node.id}: approval title is required`);
+    }
+
+    if (nodeType === "delay") {
+      if (!node.data?.delayAmount || node.data.delayAmount < 1) {
+        errors.push(`Node ${node.id}: delay amount must be greater than zero`);
+      }
+      if (!node.data?.delayUnit) errors.push(`Node ${node.id}: delay unit is required`);
+    }
+  }
+
+  if (flow.startNodeId && nodeIds.has(flow.startNodeId)) {
+    const reachable = new Set<string>();
+    const queue = [flow.startNodeId];
+
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (reachable.has(id)) continue;
+      reachable.add(id);
+      for (const edge of outgoing.get(id) || []) {
+        queue.push(edge.target);
+      }
+    }
+
+    const unreachable = nodes.filter((node) => !reachable.has(node.id));
+    if (unreachable.length > 0) {
+      errors.push(`Unreachable nodes: ${unreachable.map((node) => node.id).join(", ")}`);
+    }
   }
 
   return { valid: errors.length === 0, errors };

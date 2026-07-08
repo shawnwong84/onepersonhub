@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { owlyTools, executeToolCall } from "./tools";
 import { emitNewMessage } from "@/lib/realtime";
 import { analyzeSentiment, detectIntent, estimateConfidence, requiresHumanApproval } from "./guardrails";
+import { estimateTokens } from "@/lib/knowledge-ingestion";
+import { searchKnowledgeBase } from "./semantic-search";
+import { resolveAgentRoute } from "@/lib/agent-router";
+import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 import type {
   AIMessage,
   AIConfig,
@@ -33,9 +37,11 @@ function buildSystemPrompt(context: ConversationContext): string {
           .join("\n\n---\n\n")
       : "No specific knowledge base entries available. Answer based on general knowledge about the business.";
 
-  return `You are Owly, the AI customer support assistant for ${context.businessName}.
+  return `You are ${context.agentName || "Owly"}, the AI customer care assistant for ${context.businessName}.
 
 ${context.businessDesc ? `About the business: ${context.businessDesc}` : ""}
+${context.agentDescription ? `Assigned agent profile: ${context.agentDescription}` : ""}
+${context.agentSystemPrompt ? `Agent-specific instructions:\n${context.agentSystemPrompt}` : ""}
 
 ## Communication Style
 ${toneGuide[context.tone] || toneGuide.friendly}
@@ -76,6 +82,24 @@ async function getKnowledgeBase(): Promise<KnowledgeItem[]> {
   }));
 }
 
+async function getRelevantKnowledgeBase(query: string, agentId?: string | null): Promise<KnowledgeItem[]> {
+  const results = await searchKnowledgeBase(query, 8, { agentId });
+  if (agentId && results.length === 0) return [];
+  if (results.length === 0) return getKnowledgeBase();
+
+  return results.map((result) => ({
+    id: result.id,
+    category: result.category,
+    title: result.title,
+    content: result.content,
+    priority: Math.round(result.score * 100),
+    sourceUrl: result.sourceUrl,
+    documentId: result.documentId,
+    chunkIndex: result.chunkIndex,
+    score: result.score,
+  }));
+}
+
 async function getAIConfig(): Promise<AIConfig & ConversationContext> {
   let settings = await prisma.settings.findFirst();
   if (!settings) {
@@ -102,17 +126,15 @@ async function getAIConfig(): Promise<AIConfig & ConversationContext> {
 
 export async function chat(
   conversationId: string,
-  userMessage: string
+  userMessage: string,
+  metadata: Record<string, unknown> = {}
 ): Promise<string> {
   const config = await getAIConfig();
-
-  if (!config.apiKey) {
-    return "AI is not configured. Please add your API key in Settings > AI Configuration.";
-  }
 
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
     include: {
+      agent: true,
       messages: { orderBy: { createdAt: "asc" }, take: 50 },
     },
   });
@@ -121,7 +143,66 @@ export async function chat(
     return "Conversation not found.";
   }
 
-  const knowledgeBase = await getKnowledgeBase();
+  // Save the inbound customer message before any AI work so channel messages
+  // still appear in the inbox if AI is not configured or temporarily fails.
+  const savedUserMessage = await prisma.message.create({
+    data: {
+      conversationId,
+      role: "customer",
+      content: userMessage,
+    },
+  });
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { updatedAt: new Date() },
+  });
+
+  emitNewMessage(conversationId, {
+    id: savedUserMessage.id,
+    role: "customer",
+    content: userMessage,
+  });
+
+  if (!config.apiKey) {
+    const response = "AI is not configured. Please add your API key in Settings > AI Configuration.";
+    const savedMessage = await prisma.message.create({
+      data: {
+        conversationId,
+        role: "assistant",
+        content: response,
+        toolCalls: {
+          source: "ai",
+          reason: "ai_not_configured",
+          knowledgeBaseCount: 0,
+          ...metadata,
+        },
+      },
+    });
+
+    emitNewMessage(conversationId, {
+      id: savedMessage.id,
+      role: "assistant",
+      content: response,
+    });
+
+    await logActivity({
+      action: "ai.reply_skipped",
+      entity: ACTIVITY_ENTITIES.MESSAGE,
+      entityId: savedMessage.id,
+      description: "AI reply skipped because AI is not configured.",
+      metadata: {
+        conversationId,
+        channel: conversation.channel,
+        reason: "ai_not_configured",
+        ...metadata,
+      },
+    });
+
+    return response;
+  }
+
+  const knowledgeBase = await getRelevantKnowledgeBase(userMessage, conversation.agentId);
 
   const context: ConversationContext = {
     ...config,
@@ -129,6 +210,9 @@ export async function chat(
     customerName: conversation.customerName,
     channel: conversation.channel,
     customerHistory: [],
+    agentName: conversation.agent?.name,
+    agentDescription: conversation.agent?.description,
+    agentSystemPrompt: conversation.agent?.systemPrompt,
   };
 
   // Build message history
@@ -165,17 +249,28 @@ export async function chat(
     });
   }
 
-  // Save user message
-  await prisma.message.create({
-    data: {
-      conversationId,
-      role: "customer",
-      content: userMessage,
-    },
-  });
-
   // Call AI
   const response = await callAI(config, messages, conversationId);
+  const answerTokens = estimateTokens(response);
+  await prisma.tokenUsage.create({
+    data: {
+      provider: config.provider || "openai",
+      model: config.model,
+      feature: "conversation_ai",
+      operation: "answer_generation",
+      promptTokens: estimateTokens(messages.map((message) => message.content).join("\n")),
+      completionTokens: answerTokens,
+      totalTokens: answerTokens,
+      entityType: "conversation",
+      entityId: conversationId,
+      metadata: {
+        knowledgeBaseCount: knowledgeBase.length,
+        knowledgeBaseTitles: knowledgeBase.slice(0, 5).map((item) => item.title),
+        agentId: conversation.agent?.id,
+        agentName: conversation.agent?.name,
+      },
+    },
+  });
 
   // Save assistant message
   const savedMessage = await prisma.message.create({
@@ -183,6 +278,23 @@ export async function chat(
       conversationId,
       role: "assistant",
       content: response,
+      toolCalls: {
+        source: "ai",
+        agentId: conversation.agent?.id,
+        agentName: conversation.agent?.name,
+        knowledgeBaseCount: knowledgeBase.length,
+        knowledgeBaseTitles: knowledgeBase.slice(0, 5).map((item) => item.title),
+        knowledgeCitations: knowledgeBase.slice(0, 5).map((item) => ({
+          id: item.id,
+          title: item.title,
+          category: item.category,
+          sourceUrl: item.sourceUrl,
+          documentId: item.documentId,
+          chunkIndex: item.chunkIndex,
+          score: item.score,
+        })),
+        ...metadata,
+      },
     },
   });
 
@@ -202,6 +314,27 @@ export async function chat(
   }
 
   emitNewMessage(conversationId, { id: savedMessage.id, role: "assistant", content: response });
+
+  await logActivity({
+    action: "ai.reply_generated",
+    entity: ACTIVITY_ENTITIES.MESSAGE,
+    entityId: savedMessage.id,
+    description: knowledgeBase.length > 0
+      ? "AI reply generated using knowledge base context."
+      : "AI reply generated without matching knowledge base context.",
+    metadata: {
+      conversationId,
+      channel: conversation.channel,
+      agentId: conversation.agent?.id || null,
+      agentName: conversation.agent?.name || null,
+      knowledgeBaseCount: knowledgeBase.length,
+      knowledgeBaseTitles: knowledgeBase.slice(0, 5).map((item) => item.title),
+      usedKnowledgeBase: knowledgeBase.length > 0,
+      fallbackReason: metadata.workflowReason || null,
+      workflowChecked: metadata.workflowChecked || false,
+      workflowMatch: metadata.workflowMatch || false,
+    },
+  });
 
   return response;
 }
@@ -285,12 +418,29 @@ export async function createNewConversation(
   customerContact: string,
   customerId?: string
 ) {
+  const route = await resolveAgentRoute({
+    channel,
+    channelAccountIdentifier: customerContact,
+  });
+
   return prisma.conversation.create({
     data: {
       channel,
       customerName,
       customerContact,
       ...(customerId && { customerId }),
+      ...(route.agentId && { agentId: route.agentId }),
+      ...(route.channelAccountId && { channelAccountId: route.channelAccountId }),
+      metadata: {
+        ...(route.agent && {
+          agentName: route.agent.name,
+          agentAutomationMode: route.agent.automationMode,
+        }),
+        ...(route.channelAccount && {
+          channelAccountName: route.channelAccount.name,
+          channelAccountIdentifier: route.channelAccount.identifier,
+        }),
+      },
     },
   });
 }

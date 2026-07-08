@@ -18,12 +18,15 @@ interface SearchResult {
   content: string;
   category: string;
   score: number;
+  sourceUrl?: string;
+  documentId?: string;
+  chunkIndex?: number;
 }
 
 /**
  * Generate embedding for a text using OpenAI.
  */
-async function generateEmbedding(text: string, apiKey: string): Promise<number[] | null> {
+export async function generateEmbedding(text: string, apiKey: string): Promise<number[] | null> {
   try {
     const response = await fetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
@@ -90,10 +93,72 @@ function keywordScore(query: string, text: string): number {
  */
 export async function searchKnowledgeBase(
   query: string,
-  limit = 5
+  limit = 5,
+  options: { agentId?: string | null } = {}
 ): Promise<SearchResult[]> {
+  let entryWhere: {
+    isActive: true;
+    OR?: Array<
+      | { categoryId: { in: string[] } }
+      | { id: { in: string[] } }
+    >;
+  } = { isActive: true };
+
+  if (options.agentId) {
+    const agent = await prisma.agent.findUnique({
+      where: { id: options.agentId },
+      select: {
+        useGlobalKnowledge: true,
+        knowledgeScopes: {
+          where: { isActive: true, scopeType: "include" },
+          select: { categoryId: true, entryId: true, documentId: true },
+        },
+      },
+    });
+
+    if (agent) {
+      const categoryIds = agent.knowledgeScopes
+        .map((scope) => scope.categoryId)
+        .filter((id): id is string => Boolean(id));
+      const scopedEntryIds = agent.knowledgeScopes
+        .map((scope) => scope.entryId)
+        .filter((id): id is string => Boolean(id));
+      const documentIds = agent.knowledgeScopes
+        .map((scope) => scope.documentId)
+        .filter((id): id is string => Boolean(id));
+
+      if (documentIds.length) {
+        const chunkEntryIds = await prisma.knowledgeChunk.findMany({
+          where: {
+            documentId: { in: documentIds },
+            knowledgeEntryId: { not: null },
+          },
+          select: { knowledgeEntryId: true },
+          distinct: ["knowledgeEntryId"],
+        });
+        scopedEntryIds.push(
+          ...chunkEntryIds
+            .map((chunk) => chunk.knowledgeEntryId)
+            .filter((id): id is string => Boolean(id))
+        );
+      }
+
+      if (categoryIds.length || scopedEntryIds.length) {
+        entryWhere = {
+          isActive: true,
+          OR: [
+            ...(categoryIds.length ? [{ categoryId: { in: categoryIds } }] : []),
+            ...(scopedEntryIds.length ? [{ id: { in: scopedEntryIds } }] : []),
+          ],
+        };
+      } else if (!agent.useGlobalKnowledge) {
+        return [];
+      }
+    }
+  }
+
   const entries = await prisma.knowledgeEntry.findMany({
-    where: { isActive: true },
+    where: entryWhere,
     include: { category: { select: { name: true } } },
   });
 
@@ -141,6 +206,9 @@ export async function searchKnowledgeBase(
           content: entry.content,
           category: entry.category.name,
           score,
+          sourceUrl: typeof metadata?.sourceUrl === "string" ? metadata.sourceUrl : undefined,
+          documentId: typeof metadata?.documentId === "string" ? metadata.documentId : undefined,
+          chunkIndex: typeof metadata?.chunkIndex === "number" ? metadata.chunkIndex : undefined,
         };
       });
     } else {
@@ -164,16 +232,23 @@ function keywordSearch(
     title: string;
     content: string;
     category: { name: string };
+    metadata?: unknown;
   }>,
   query: string
 ): SearchResult[] {
-  return entries.map((entry) => ({
-    id: entry.id,
-    title: entry.title,
-    content: entry.content,
-    category: entry.category.name,
-    score: keywordScore(query, `${entry.title} ${entry.content}`),
-  }));
+  return entries.map((entry) => {
+    const metadata = entry.metadata as Record<string, unknown> | null;
+    return {
+      id: entry.id,
+      title: entry.title,
+      content: entry.content,
+      category: entry.category.name,
+      score: keywordScore(query, `${entry.title} ${entry.content}`),
+      sourceUrl: typeof metadata?.sourceUrl === "string" ? metadata.sourceUrl : undefined,
+      documentId: typeof metadata?.documentId === "string" ? metadata.documentId : undefined,
+      chunkIndex: typeof metadata?.chunkIndex === "number" ? metadata.chunkIndex : undefined,
+    };
+  });
 }
 
 /**

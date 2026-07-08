@@ -47,11 +47,19 @@ export interface ConversationContext {
   customerName: string;
   customerHistory: string[];
   channel: string;
+  agentName?: string;
+  agentDescription?: string;
+  agentSystemPrompt?: string;
 }
 
 export interface KnowledgeItem {
+  id?: string;
   category: string;
   title: string;
   content: string;
   priority: number;
+  sourceUrl?: string;
+  documentId?: string;
+  chunkIndex?: number;
+  score?: number;
 }
