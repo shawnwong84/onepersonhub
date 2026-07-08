@@ -42,3 +42,12 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# WhatsApp Web runtime session/cache
+/.wwebjs_auth
+/.wwebjs_cache
+
+# Runtime data and local tooling artifacts
+/.rag_uploads
+/output
+/eng.traineddata
