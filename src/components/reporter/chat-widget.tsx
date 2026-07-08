@@ -41,7 +41,7 @@ export function ReporterChatWidget() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-owly-primary text-white shadow-lg transition-transform hover:scale-105"
+        className="fixed bottom-16 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-owly-primary text-white shadow-lg transition-transform hover:scale-105 lg:bottom-4"
         title="Reporter Agent"
       >
         <Bot className="h-6 w-6" />

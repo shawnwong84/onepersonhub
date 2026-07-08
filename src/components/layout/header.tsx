@@ -125,20 +125,20 @@ export function Header({ title, description, actions }: HeaderProps) {
   };
 
   return (
-    <header className="flex items-center justify-between px-6 py-4 bg-owly-surface border-b border-owly-border transition-theme">
-      <div className="animate-fade-in">
-        <h2 className="text-xl font-semibold text-owly-text">{title}</h2>
+    <header className="flex items-center justify-between gap-2 px-4 sm:px-6 py-3 sm:py-4 bg-owly-surface border-b border-owly-border transition-theme">
+      <div className="animate-fade-in min-w-0">
+        <h2 className="text-lg sm:text-xl font-semibold text-owly-text truncate">{title}</h2>
         {description && (
-          <p className="text-sm text-owly-text-light mt-0.5">{description}</p>
+          <p className="hidden sm:block text-sm text-owly-text-light mt-0.5 truncate">{description}</p>
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
         {searchOpen && (
           <input
             type="text"
             placeholder="Search..."
-            className="px-3 py-1.5 text-sm border border-owly-border rounded-lg bg-owly-surface text-owly-text focus:outline-none focus:ring-2 focus:ring-owly-primary/30 focus:border-owly-primary w-64 animate-slide-in-down transition-theme"
+            className="px-3 py-1.5 text-sm border border-owly-border rounded-lg bg-owly-surface text-owly-text focus:outline-none focus:ring-2 focus:ring-owly-primary/30 focus:border-owly-primary w-36 sm:w-64 animate-slide-in-down transition-theme"
             autoFocus
             onBlur={() => setSearchOpen(false)}
           />

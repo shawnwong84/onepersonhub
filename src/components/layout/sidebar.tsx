@@ -32,12 +32,12 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { getModuleIcon } from "@/lib/marketplace/icon-map";
 
-interface NavSection {
+export interface NavSection {
   title?: string;
   items: { name: string; href: string; icon: React.ElementType }[];
 }
 
-const sections: NavSection[] = [
+export const NAV_SECTIONS: NavSection[] = [
   {
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -122,7 +122,7 @@ export function Sidebar() {
   }, [pathname]);
 
   const navSections = useMemo(() => {
-    if (installedModules.length === 0) return sections;
+    if (installedModules.length === 0) return NAV_SECTIONS;
     const moduleSection: NavSection = {
       title: "Modules",
       items: installedModules.map((module) => ({
@@ -131,14 +131,14 @@ export function Sidebar() {
         icon: getModuleIcon(module.iconName),
       })),
     };
-    const systemIndex = sections.findIndex((section) => section.title === "System");
-    return [...sections.slice(0, systemIndex), moduleSection, ...sections.slice(systemIndex)];
+    const systemIndex = NAV_SECTIONS.findIndex((section) => section.title === "System");
+    return [...NAV_SECTIONS.slice(0, systemIndex), moduleSection, ...NAV_SECTIONS.slice(systemIndex)];
   }, [installedModules]);
 
   return (
     <aside
       className={cn(
-        "flex flex-col bg-owly-sidebar text-white transition-all duration-300",
+        "hidden lg:flex flex-col bg-owly-sidebar text-white transition-all duration-300",
         collapsed ? "w-16" : "w-60"
       )}
     >
