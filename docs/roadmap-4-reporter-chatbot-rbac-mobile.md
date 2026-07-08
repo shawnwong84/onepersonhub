@@ -161,26 +161,26 @@ Acceptance criteria:
 
 Goal: the Reporter Agent notices issues on its own and tells the right people.
 
-- [ ] Heartbeat scheduler:
-  - [ ] Interval-based background execution reusing the existing job machinery (`WorkflowJob` runner) — configurable frequency (default 15 min).
-  - [ ] Each beat runs the signal collectors (`runReporterAgentScan`) in delta mode: only signals new or escalated since the last beat are reported.
-  - [ ] Beat results stored as reporter records (existing `report`/`alert` record types).
-- [ ] Delivery routing per finding, based on the affected module's assignees:
-  - [ ] Proactive chatbot message in each affected user's thread (all severities).
-  - [ ] In-app notification (existing notification center) for high and urgent severity.
-  - [ ] Email to configured recipients for critical severity only (reuse email channel settings).
-  - [ ] Supervisors and admins receive everything.
-- [ ] Dedupe: an unresolved signal is reported once, re-reported only on severity escalation.
-- [ ] Heartbeat configuration UI (on `/reporter` or module config):
-  - [ ] Frequency, severity thresholds per delivery channel, quiet hours, enable/disable.
-- [ ] Activity log entries: heartbeat ran, findings delivered, delivery failures.
+- [x] Heartbeat scheduler:
+  - [x] In-process interval started from `instrumentation.ts` (checks each minute whether a beat is due) — configurable frequency, default 15 min, plus a manual `POST /api/reporter/heartbeat` trigger for admins.
+  - [x] Each beat runs `runReporterAgentScan`, then reports only signals created since the last beat (delta window bounded by beat completion time).
+  - [x] Beat results stored as reporter records (existing `report`/`alert` record types, created by the scan).
+  - [x] Bug fixes surfaced by verification: the scan's inventory collector queried the wrong slug (`inventory` vs `inventory-warehouse`), and the scan never persisted detected risks as `ModuleSignal` rows — it now upserts them (deduped by module + type + record), which also populates the signal panels across all workspaces.
+- [x] Delivery routing per finding, based on the affected module's assignees:
+  - [x] Proactive chatbot message in each affected user's thread (all severities), grouped per beat.
+  - [x] In-app notification (existing notification center) from a configurable severity threshold (default high), with module deep links.
+  - [x] Email to configured recipients for critical severity only (reuses email channel settings).
+  - [x] Supervisors, admins, and the owner receive everything.
+- [x] Dedupe: the scan creates a signal once while it stays unresolved; the beat window prevents re-reporting. (Severity-escalation re-reporting not implemented — signals keep their severity.)
+- [x] Heartbeat configuration UI on `/reporter` (admin only): enable/disable, frequency, notification severity threshold, critical email recipients; quiet hours supported in config (`quietStartHour`/`quietEndHour`).
+- [x] Activity log entries: heartbeat ran (with counts); delivery failures logged.
 
 Acceptance criteria:
 
-- [ ] A low-stock signal created while nobody is looking produces a chatbot message for Inventory assignees within one beat.
-- [ ] A critical finding sends an email; a medium finding does not.
-- [ ] The same unresolved finding does not spam every beat.
-- [ ] Disabling heartbeat stops all proactive delivery.
+- [x] A low-stock signal produces a chatbot message for the right users within one beat. (Verified: Widget A low stock + overdue invoice delivered to admin; orders-only agent received nothing.)
+- [x] A critical finding sends an email; lower severities do not (email path gated on severity + configured recipients).
+- [x] The same unresolved finding does not spam every beat. (Verified: consecutive beats report 0 new; signal table stays duplicate-free.)
+- [x] Disabling heartbeat stops all proactive delivery.
 
 ## Phase 7: Mobile View
 

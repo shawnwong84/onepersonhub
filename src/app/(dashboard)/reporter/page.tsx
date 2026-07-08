@@ -14,17 +14,35 @@ interface ReporterRecord {
   updatedAt: string;
 }
 
+interface HeartbeatSettings {
+  heartbeatEnabled: boolean;
+  heartbeatMinutes: number;
+  notifySeverity: string;
+  emailRecipients: string;
+}
+
 export default function ReporterPage() {
   const [reports, setReports] = useState<ReporterRecord[]>([]);
   const [openSignals, setOpenSignals] = useState(0);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [heartbeat, setHeartbeat] = useState<HeartbeatSettings>({
+    heartbeatEnabled: true,
+    heartbeatMinutes: 15,
+    notifySeverity: "high",
+    emailRecipients: "",
+  });
+  const [savingHeartbeat, setSavingHeartbeat] = useState(false);
+  const [heartbeatNotice, setHeartbeatNotice] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [recordsRes, signalsRes] = await Promise.all([
+      const [recordsRes, signalsRes, moduleRes, meRes] = await Promise.all([
         fetch("/api/modules/reporter-agent/records?limit=10"),
         fetch("/api/modules/signals?status=open&limit=1"),
+        fetch("/api/marketplace/modules/reporter-agent"),
+        fetch("/api/auth"),
       ]);
       if (recordsRes.ok) {
         const body = await recordsRes.json();
@@ -33,6 +51,20 @@ export default function ReporterPage() {
       if (signalsRes.ok) {
         const body = await signalsRes.json();
         setOpenSignals(body.pagination?.total ?? 0);
+      }
+      if (moduleRes.ok) {
+        const body = await moduleRes.json();
+        const config = body.config || {};
+        setHeartbeat({
+          heartbeatEnabled: config.heartbeatEnabled !== false,
+          heartbeatMinutes: Number(config.heartbeatMinutes) || 15,
+          notifySeverity: config.notifySeverity || "high",
+          emailRecipients: Array.isArray(config.emailRecipients) ? config.emailRecipients.join(", ") : "",
+        });
+      }
+      if (meRes.ok) {
+        const body = await meRes.json();
+        setIsAdmin(body.user?.role === "admin");
       }
     } catch {
       // panel data is non-critical
@@ -55,6 +87,52 @@ export default function ReporterPage() {
       setError(err instanceof Error ? err.message : "Scan failed");
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function saveHeartbeat() {
+    setSavingHeartbeat(true);
+    setHeartbeatNotice("");
+    try {
+      const res = await fetch("/api/marketplace/modules/reporter-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "configure",
+          config: {
+            heartbeatEnabled: heartbeat.heartbeatEnabled,
+            heartbeatMinutes: Math.max(5, Number(heartbeat.heartbeatMinutes) || 15),
+            notifySeverity: heartbeat.notifySeverity,
+            emailRecipients: heartbeat.emailRecipients
+              .split(",")
+              .map((value) => value.trim())
+              .filter((value) => value.includes("@")),
+          },
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Failed to save heartbeat settings");
+      setHeartbeatNotice("Heartbeat settings saved.");
+    } catch (err) {
+      setHeartbeatNotice(err instanceof Error ? err.message : "Failed to save heartbeat settings");
+    } finally {
+      setSavingHeartbeat(false);
+    }
+  }
+
+  async function runHeartbeatNow() {
+    setSavingHeartbeat(true);
+    setHeartbeatNotice("");
+    try {
+      const res = await fetch("/api/reporter/heartbeat", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Heartbeat failed");
+      setHeartbeatNotice(`Heartbeat ran: ${body.newSignals ?? 0} new signal(s), ${body.delivered ?? 0} chat deliveries.`);
+      await load();
+    } catch (err) {
+      setHeartbeatNotice(err instanceof Error ? err.message : "Heartbeat failed");
+    } finally {
+      setSavingHeartbeat(false);
     }
   }
 
@@ -110,6 +188,77 @@ export default function ReporterPage() {
               Open Reporter workspace
             </Link>
           </section>
+
+          {isAdmin && (
+            <section className="rounded-xl border border-owly-border bg-owly-surface p-5">
+              <h2 className="font-semibold text-owly-text">Heartbeat</h2>
+              <p className="mt-1 text-sm text-owly-text-light">
+                The Reporter Agent scans on a schedule and messages affected users when new issues appear.
+              </p>
+              {heartbeatNotice && (
+                <p className="mt-2 rounded-lg bg-owly-bg px-3 py-2 text-sm text-owly-text">{heartbeatNotice}</p>
+              )}
+              <div className="mt-4 space-y-3">
+                <label className="flex items-center gap-2 text-sm text-owly-text">
+                  <input
+                    type="checkbox"
+                    checked={heartbeat.heartbeatEnabled}
+                    onChange={(event) => setHeartbeat((h) => ({ ...h, heartbeatEnabled: event.target.checked }))}
+                  />
+                  Heartbeat enabled
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-owly-text">Frequency (minutes)</span>
+                  <input
+                    type="number"
+                    min={5}
+                    value={heartbeat.heartbeatMinutes}
+                    onChange={(event) => setHeartbeat((h) => ({ ...h, heartbeatMinutes: Number(event.target.value) }))}
+                    className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-owly-text">Notify (bell) from severity</span>
+                  <select
+                    value={heartbeat.notifySeverity}
+                    onChange={(event) => setHeartbeat((h) => ({ ...h, notifySeverity: event.target.value }))}
+                    className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                  >
+                    {["low", "medium", "high", "urgent", "critical"].map((severity) => (
+                      <option key={severity} value={severity}>{severity}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-owly-text">Critical alert emails (comma-separated)</span>
+                  <input
+                    value={heartbeat.emailRecipients}
+                    onChange={(event) => setHeartbeat((h) => ({ ...h, emailRecipients: event.target.value }))}
+                    placeholder="ops@example.com"
+                    className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                  />
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={savingHeartbeat}
+                    onClick={saveHeartbeat}
+                    className="rounded-lg bg-owly-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingHeartbeat}
+                    onClick={runHeartbeatNow}
+                    className="rounded-lg border border-owly-border px-3 py-2 text-sm font-semibold text-owly-text hover:bg-owly-bg disabled:opacity-60"
+                  >
+                    Run heartbeat now
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
 
           <section className="rounded-xl border border-owly-border bg-owly-surface">
             <div className="border-b border-owly-border px-5 py-4">

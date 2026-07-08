@@ -135,7 +135,7 @@ async function collectInventoryAndOrderRisks(config: ReporterConfig): Promise<At
   const [inventoryRecords, orderRecords] = await Promise.all([
     prisma.moduleRecord.findMany({
       where: {
-        module: { ...enabledModuleWhere(config), slug: "inventory" },
+        module: { ...enabledModuleWhere(config), slug: "inventory-warehouse" },
         status: { notIn: ["closed", "resolved", "cancelled", "completed"] },
       },
       include: { module: { select: { slug: true, name: true } } },
@@ -470,6 +470,45 @@ export async function runReporterAgentScan(actorName = "Reporter Agent") {
   ]
     .filter((item) => severityRank(item.severity) >= minSeverity)
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
+
+  // Persist detected risks as module signals so workspaces, the heartbeat,
+  // and the chatbot all see them. Items sourced from existing signals are skipped.
+  const detectedItems = items.filter((item) => !item.signalId);
+  if (detectedItems.length > 0) {
+    const slugs = Array.from(new Set(detectedItems.map((item) => item.moduleSlug).filter(Boolean)));
+    const moduleRows = await prisma.businessModule.findMany({
+      where: { slug: { in: slugs as string[] } },
+      select: { id: true, slug: true },
+    });
+    const idBySlug = new Map(moduleRows.map((row) => [row.slug, row.id]));
+
+    for (const item of detectedItems) {
+      const moduleId = item.moduleSlug ? idBySlug.get(item.moduleSlug) : undefined;
+      if (!moduleId) continue;
+      const existing = await prisma.moduleSignal.findFirst({
+        where: {
+          moduleId,
+          signalType: item.type,
+          status: { not: "resolved" },
+          ...(item.moduleRecordId ? { moduleRecordId: item.moduleRecordId } : { title: item.title }),
+        },
+        select: { id: true },
+      });
+      if (existing) continue;
+      await prisma.moduleSignal.create({
+        data: {
+          moduleId,
+          moduleRecordId: item.moduleRecordId || null,
+          signalType: item.type,
+          severity: item.severity,
+          title: item.title,
+          description: item.description || "",
+          status: "open",
+          metadata: { detectedBy: "reporter_scan" },
+        },
+      });
+    }
+  }
   const criticalCount = items.filter((item) => severityRank(item.severity) >= severityRank("high")).length;
   const outputType = outputTypeFor(config, items);
   const itemSummaries = items.map(stringifyItem);
