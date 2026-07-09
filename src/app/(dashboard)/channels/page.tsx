@@ -1088,6 +1088,13 @@ export default function ChannelsPage() {
           </div>
         ) : (
           <>
+            <div className="max-w-7xl mb-3">
+              <h2 className="font-semibold text-owly-text">Default channel connections</h2>
+              <p className="text-sm text-owly-text-light">
+                The primary connection per channel. Inbound traffic arrives here; extra numbers and
+                inboxes are managed as channel accounts below.
+              </p>
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl">
               <WhatsAppCard
                 channel={getChannel("whatsapp")}

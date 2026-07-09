@@ -18,6 +18,7 @@ interface ChannelAccountData {
   status: string;
   isActive: boolean;
   automationMode: string;
+  credentials?: Record<string, unknown> | null;
   defaultAgent: AgentOption | null;
   agents: { agent: AgentOption; priority: number }[];
   lastInboundAt: string | null;
@@ -33,6 +34,18 @@ const AUTOMATION_MODES = [
   { value: "manual_only", label: "Manual only" },
 ];
 
+const EMPTY_CREDENTIALS = {
+  smtpHost: "",
+  smtpPort: "465",
+  smtpUser: "",
+  smtpPass: "",
+  smtpFrom: "",
+  imapHost: "",
+  imapPort: "993",
+  imapUser: "",
+  imapPass: "",
+};
+
 const EMPTY_FORM = {
   channel: "whatsapp",
   name: "",
@@ -40,6 +53,7 @@ const EMPTY_FORM = {
   automationMode: "workflow_first",
   defaultAgentId: "",
   isActive: true,
+  credentials: { ...EMPTY_CREDENTIALS },
 };
 
 export function ChannelAccountsSection() {
@@ -128,12 +142,13 @@ export function ChannelAccountsSection() {
 
   function openCreate() {
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, credentials: { ...EMPTY_CREDENTIALS } });
     setError("");
     setShowForm(true);
   }
 
   function openEdit(account: ChannelAccountData) {
+    const saved = (account.credentials || {}) as Record<string, unknown>;
     setEditing(account);
     setForm({
       channel: account.channel,
@@ -142,6 +157,17 @@ export function ChannelAccountsSection() {
       automationMode: account.automationMode,
       defaultAgentId: account.defaultAgent?.id || "",
       isActive: account.isActive,
+      credentials: {
+        smtpHost: String(saved.smtpHost || ""),
+        smtpPort: String(saved.smtpPort || "465"),
+        smtpUser: String(saved.smtpUser || ""),
+        smtpPass: String(saved.smtpPass || ""),
+        smtpFrom: String(saved.smtpFrom || ""),
+        imapHost: String(saved.imapHost || ""),
+        imapPort: String(saved.imapPort || "993"),
+        imapUser: String(saved.imapUser || ""),
+        imapPass: String(saved.imapPass || ""),
+      },
     });
     setError("");
     setShowForm(true);
@@ -151,6 +177,12 @@ export function ChannelAccountsSection() {
     setSaving(true);
     setError("");
     try {
+      const credentials =
+        form.channel === "email"
+          ? Object.fromEntries(
+              Object.entries(form.credentials).filter(([, value]) => String(value).trim() !== "")
+            )
+          : undefined;
       const payload = {
         channel: form.channel,
         name: form.name.trim(),
@@ -158,6 +190,7 @@ export function ChannelAccountsSection() {
         automationMode: form.automationMode,
         defaultAgentId: form.defaultAgentId || null,
         isActive: form.isActive,
+        ...(credentials ? { credentials } : {}),
       };
       const res = editing
         ? await fetch(`/api/channel-accounts/${editing.id}`, {
@@ -447,6 +480,137 @@ export function ChannelAccountsSection() {
                 />
                 Account active
               </label>
+
+              {form.channel === "whatsapp" && (
+                <p className="rounded-lg bg-owly-bg px-3 py-2 text-xs text-owly-text-light">
+                  No credentials needed. Save the account, then use the connect action in the table
+                  to scan a QR code with the phone for this number.
+                </p>
+              )}
+
+              {form.channel === "email" && (
+                <div className="space-y-3 rounded-lg border border-owly-border p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-owly-text-light">
+                    Inbox credentials (outgoing mail uses these; leave empty to send via the default SMTP)
+                  </p>
+                  <div className="grid grid-cols-[minmax(0,1fr)_90px] gap-2">
+                    <label className="block text-sm">
+                      <span className="font-medium text-owly-text">SMTP host</span>
+                      <input
+                        value={form.credentials.smtpHost}
+                        onChange={(event) =>
+                          setForm((f) => ({ ...f, credentials: { ...f.credentials, smtpHost: event.target.value } }))
+                        }
+                        placeholder="smtp.example.com"
+                        className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                      />
+                    </label>
+                    <label className="block text-sm">
+                      <span className="font-medium text-owly-text">Port</span>
+                      <input
+                        value={form.credentials.smtpPort}
+                        onChange={(event) =>
+                          setForm((f) => ({ ...f, credentials: { ...f.credentials, smtpPort: event.target.value } }))
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block text-sm">
+                      <span className="font-medium text-owly-text">Username</span>
+                      <input
+                        value={form.credentials.smtpUser}
+                        onChange={(event) =>
+                          setForm((f) => ({ ...f, credentials: { ...f.credentials, smtpUser: event.target.value } }))
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                      />
+                    </label>
+                    <label className="block text-sm">
+                      <span className="font-medium text-owly-text">Password</span>
+                      <input
+                        type="password"
+                        value={form.credentials.smtpPass}
+                        onChange={(event) =>
+                          setForm((f) => ({ ...f, credentials: { ...f.credentials, smtpPass: event.target.value } }))
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                      />
+                    </label>
+                  </div>
+                  <label className="block text-sm">
+                    <span className="font-medium text-owly-text">From address</span>
+                    <input
+                      value={form.credentials.smtpFrom}
+                      onChange={(event) =>
+                        setForm((f) => ({ ...f, credentials: { ...f.credentials, smtpFrom: event.target.value } }))
+                      }
+                      placeholder="Defaults to the identifier above"
+                      className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                    />
+                  </label>
+                  <div className="grid grid-cols-[minmax(0,1fr)_90px] gap-2">
+                    <label className="block text-sm">
+                      <span className="font-medium text-owly-text">IMAP host (incoming)</span>
+                      <input
+                        value={form.credentials.imapHost}
+                        onChange={(event) =>
+                          setForm((f) => ({ ...f, credentials: { ...f.credentials, imapHost: event.target.value } }))
+                        }
+                        placeholder="imap.example.com"
+                        className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                      />
+                    </label>
+                    <label className="block text-sm">
+                      <span className="font-medium text-owly-text">Port</span>
+                      <input
+                        value={form.credentials.imapPort}
+                        onChange={(event) =>
+                          setForm((f) => ({ ...f, credentials: { ...f.credentials, imapPort: event.target.value } }))
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block text-sm">
+                      <span className="font-medium text-owly-text">IMAP username</span>
+                      <input
+                        value={form.credentials.imapUser}
+                        onChange={(event) =>
+                          setForm((f) => ({ ...f, credentials: { ...f.credentials, imapUser: event.target.value } }))
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                      />
+                    </label>
+                    <label className="block text-sm">
+                      <span className="font-medium text-owly-text">IMAP password</span>
+                      <input
+                        type="password"
+                        value={form.credentials.imapPass}
+                        onChange={(event) =>
+                          setForm((f) => ({ ...f, credentials: { ...f.credentials, imapPass: event.target.value } }))
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                      />
+                    </label>
+                  </div>
+                  <p className="text-xs text-owly-text-light">
+                    Outgoing mail from this account uses the SMTP settings above. Incoming mail for
+                    additional inboxes is not listened to yet - the default Email channel remains
+                    the inbound mailbox.
+                  </p>
+                </div>
+              )}
+
+              {(form.channel === "phone" || form.channel === "sms" || form.channel === "telegram") && (
+                <p className="rounded-lg bg-owly-bg px-3 py-2 text-xs text-owly-text-light">
+                  {form.channel === "phone"
+                    ? "Additional phone numbers use the Twilio settings from the Phone channel card. Per-account Twilio credentials are not supported yet."
+                    : "This account is used for routing and reporting. Provider credentials come from the channel-level settings."}
+                </p>
+              )}
             </div>
             <div className="flex justify-end gap-2 border-t border-owly-border px-5 py-4">
               <button
