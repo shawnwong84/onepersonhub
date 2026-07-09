@@ -32,7 +32,7 @@ Add a visual workflow automation builder for support workflows. The builder shou
 - [x] Store approval decisions and approver identity in workflow run logs.
 - [x] Add persisted run logs.
 - [x] Add scheduled delay execution. (Delay nodes create `WorkflowJob` rows; `processDueWorkflowJobs` resumes them; the in-process worker below executes them automatically.)
-- [ ] Add branch rendering for true/false condition paths.
+- [x] Add branch rendering for true/false condition paths. (Condition steps show true/false badges; "If false" selector jumps to a later step or stops; persisted as sourceHandle:"false" edges the runtime already executes.)
 - [x] Add execution adapters for email and AI reply steps (`send_email`, `ai_reply`, `llm`, `call_api` in `workflow-runtime.ts`). MCP tool calls and skill calls remain open:
   - [ ] MCP tool call adapter.
   - [ ] Skill call adapter.

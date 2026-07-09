@@ -25,7 +25,7 @@ Build Cosstigo into a reliable customer service workspace where channel messages
   - [ ] Skill call adapter.
 - [x] Add ticket lifecycle automation: when support closes a ticket, auto-reply to the customer on the original channel.
 - [x] Add scheduled delay execution with a background worker. (`workflow-worker.ts` processes due `WorkflowJob`s every 30s from `instrumentation.ts`.)
-- [ ] Add branch rendering for true/false condition paths.
+- [x] Add branch rendering for true/false condition paths. (Condition steps show true/false badges; "If false" selector jumps to a later step or stops; persisted as sourceHandle:"false" edges the runtime already executes.)
 - [x] Add channel health checks (status badges and health panel on the Channels page). Per-account reconnect controls tracked in the agent-capability roadmap.
 
 ## UI and UX Direction

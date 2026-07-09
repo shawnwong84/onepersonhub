@@ -48,6 +48,8 @@ interface WorkflowNodeData {
   conditionField?: string;
   conditionOperator?: string;
   conditionValue?: string;
+  /** Node id executed when the condition is false; unset means the flow stops. */
+  falseTargetId?: string;
   actionType?: string;
   actionValue?: string;
   replyText?: string;
@@ -102,6 +104,7 @@ interface WorkflowEdge {
   id: string;
   source: string;
   target: string;
+  sourceHandle?: string | null;
   type?: string;
 }
 
@@ -627,13 +630,30 @@ function makeStepNode(step: StepDefinition, index: number): WorkflowNode {
 }
 
 function buildEdges(nodes: WorkflowNode[]): WorkflowEdge[] {
-  return nodes.slice(0, -1).map((node, index) => ({
+  const edges: WorkflowEdge[] = nodes.slice(0, -1).map((node, index) => ({
     id: `${node.id}-${nodes[index + 1].id}`,
     source: node.id,
     target: nodes[index + 1].id,
     sourceHandle: node.data.nodeType === "condition" ? "true" : null,
     type: "execution",
   }));
+
+  // Condition false branches: only forward jumps, so a flow cannot loop.
+  for (const [index, node] of nodes.entries()) {
+    const falseTargetId = node.data.falseTargetId;
+    if (node.data.nodeType !== "condition" || !falseTargetId) continue;
+    const targetIndex = nodes.findIndex((candidate) => candidate.id === falseTargetId);
+    if (targetIndex <= index) continue;
+    edges.push({
+      id: `${node.id}-false-${falseTargetId}`,
+      source: node.id,
+      target: falseTargetId,
+      sourceHandle: "false",
+      type: "execution",
+    });
+  }
+
+  return edges;
 }
 
 export function FlowsPageClient({ initialFlowId }: { initialFlowId?: string }) {
@@ -775,7 +795,15 @@ export function FlowsPageClient({ initialFlowId }: { initialFlowId?: string }) {
 
   const selectFlow = useCallback((flow: FlowData, options: { updateUrl?: boolean } = {}) => {
     const updateUrl = options.updateUrl ?? true;
-    const loadedNodes = Array.isArray(flow.nodes) ? flow.nodes : [];
+    const falseEdges = (Array.isArray(flow.edges) ? flow.edges : []).filter(
+      (edge) => edge.sourceHandle === "false"
+    );
+    const loadedNodes = (Array.isArray(flow.nodes) ? flow.nodes : []).map((node) => {
+      const falseEdge = falseEdges.find((edge) => edge.source === node.id);
+      return falseEdge
+        ? { ...node, data: { ...node.data, falseTargetId: falseEdge.target } }
+        : node;
+    });
     const loadedTrigger = loadedNodes.find((node) => node.data.nodeType === "trigger");
     setSelectedFlow(flow);
     setName(flow.name);
@@ -1182,6 +1210,7 @@ export function FlowsPageClient({ initialFlowId }: { initialFlowId?: string }) {
                     <div key={node.id} className="flex w-full flex-col items-center">
                       <ExecutionStepCard
                         node={node}
+                        nodes={executionNodes}
                         index={index}
                         selected={selectedStepId === node.id}
                         onSelect={() => setSelectedStepId(node.id)}
@@ -1276,6 +1305,7 @@ export function FlowsPageClient({ initialFlowId }: { initialFlowId?: string }) {
       {viewMode === "editor" && selectedStep && (
         <StepInspector
           step={selectedStep}
+          nodes={executionNodes}
           referenceData={referenceData}
           onClose={() => setSelectedStepId(null)}
           onChange={updateStep}
@@ -1803,17 +1833,23 @@ function EmptyActionCard({ onTemplate }: { onTemplate: () => void }) {
 
 function ExecutionStepCard({
   node,
+  nodes,
   index,
   selected,
   onSelect,
   onRemove,
 }: {
   node: WorkflowNode;
+  nodes: WorkflowNode[];
   index: number;
   selected: boolean;
   onSelect: () => void;
   onRemove: () => void;
 }) {
+  const falseTargetIndex = node.data.falseTargetId
+    ? nodes.findIndex((candidate) => candidate.id === node.data.falseTargetId)
+    : -1;
+  const falseTarget = falseTargetIndex >= 0 ? nodes[falseTargetIndex] : null;
   const step = stepCatalog.find((item) => item.actionType === node.data.actionType);
   const Icon = step?.icon || Code2;
 
@@ -1841,11 +1877,17 @@ function ExecutionStepCard({
           {node.data.nodeType === "condition" && (
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                true: continue
+                true: continue to step {index + 2}
               </span>
-              <span className="rounded-full bg-owly-primary-50 px-2 py-0.5 text-xs font-semibold text-owly-text-light">
-                false: stop unless a false edge exists
-              </span>
+              {falseTarget ? (
+                <span className="rounded-full bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                  false: jump to step {falseTargetIndex + 1} ({falseTarget.data.label})
+                </span>
+              ) : (
+                <span className="rounded-full bg-owly-primary-50 px-2 py-0.5 text-xs font-semibold text-owly-text-light">
+                  false: stop the flow
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -1926,11 +1968,13 @@ function Connector() {
 
 function StepInspector({
   step,
+  nodes,
   referenceData,
   onClose,
   onChange,
 }: {
   step: WorkflowNode;
+  nodes: WorkflowNode[];
   referenceData: FlowReferenceData;
   onClose: () => void;
   onChange: (data: Partial<WorkflowNodeData>) => void;
@@ -2007,6 +2051,25 @@ function StepInspector({
               value={step.data.conditionValue || ""}
               options={conditionValueOptions}
               onChange={(value) => onChange({ conditionValue: value })}
+            />
+            <DarkOptionSelect
+              label="If false"
+              value={step.data.falseTargetId || ""}
+              options={[
+                { value: "", label: "Stop the flow" },
+                ...nodes
+                  .map((node, index) => ({ node, index }))
+                  .filter(
+                    ({ node, index }) =>
+                      index > nodes.findIndex((candidate) => candidate.id === step.id) &&
+                      node.data.nodeType !== "trigger"
+                  )
+                  .map(({ node, index }) => ({
+                    value: node.id,
+                    label: `Jump to step ${index + 1}: ${node.data.label}`,
+                  })),
+              ]}
+              onChange={(value) => onChange({ falseTargetId: value || undefined })}
             />
           </>
         )}
