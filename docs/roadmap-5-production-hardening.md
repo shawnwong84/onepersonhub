@@ -1,0 +1,127 @@
+# Roadmap 5: Production Hardening and UX Overhaul
+
+## Objective
+
+Take Cosstigo from feature-complete to production-trustworthy: a security pass with encrypted secrets, reliable multi-instance operation, a deployable and observable runtime, an end-to-end test safety net — and a deliberate UI/UX overhaul driven by a design audit, because the product grew fast and it shows.
+
+Roadmaps 1–4 delivered the features. This roadmap makes them safe to sell.
+
+## Current State (verified against code)
+
+- 327 unit/API tests pass; no end-to-end browser suite exists.
+- CI (`ci.yml`) and a Docker publish workflow exist; a `Dockerfile` exists (currency unverified against the new workers/instrumentation).
+- `/api/health` exists.
+- Rate limiting is an in-memory `Map` (`src/lib/rate-limit.ts`) — resets on restart, incorrect across multiple instances despite Redis being available in compose.
+- Channel credentials (`ChannelAccount.credentials`), the AI API key (`Settings.aiApiKey`), and SMTP/Twilio secrets are stored **unencrypted** in Postgres.
+- Three in-process workers (workflow jobs, reporter heartbeat, website recrawl) start via `instrumentation.ts` — correct for one instance, duplicated beats/jobs if horizontally scaled.
+- No error monitoring; logs are console-structured only.
+- Open runtime items from roadmap audits: per-account inbound IMAP listeners; priority ordering when multiple workflows match.
+
+## Phase 1: Security
+
+- [ ] Run a full security review of the branch (`/security-review`) and fix every actionable finding.
+- [ ] Encrypt secrets at rest: application-level AES-256-GCM (key from `SECRETS_ENCRYPTION_KEY` env) wrapping `ChannelAccount.credentials`, `Settings.aiApiKey`, SMTP/Twilio/ElevenLabs values, and API key hashes review.
+  - [ ] Transparent encrypt/decrypt helpers; migration to re-encrypt existing rows; key-rotation procedure documented.
+- [ ] Inbound webhook hardening: per-key rate limit, optional HMAC signature verification, payload size limits (length check exists).
+- [ ] Auth hardening: login attempt lockout/backoff (rate limit exists — add lockout), logout-all-sessions on password change (JWT version claim), configurable session lifetime.
+- [ ] Security headers audit (CSP, HSTS behind TLS, X-Frame-Options) in middleware/proxy.
+- [ ] `npm audit` triage; pin or patch anything with a known exploit path.
+- [ ] Secrets scan of the repo history before any public exposure.
+
+Acceptance criteria:
+
+- [ ] A database dump alone does not yield usable channel or AI credentials.
+- [ ] Security review reports no high-severity findings.
+
+## Phase 2: Reliability and Multi-Instance Correctness
+
+- [ ] Move rate limiting to Redis (fixed-window or sliding-window) with in-memory fallback when Redis is absent.
+- [ ] Worker leadership: guard the three in-process workers with a Redis lock (or `WORKER_ROLE` env) so multiple app instances do not double-run heartbeats/jobs/recrawls.
+- [ ] Workflow job claiming: row-level locking (`FOR UPDATE SKIP LOCKED` or `lockedAt` compare-and-set) so concurrent workers never double-execute a job.
+- [ ] Graceful shutdown: drain in-flight jobs and close WhatsApp clients on SIGTERM (extend `shutdown.ts`).
+- [ ] Startup env validation: fail fast with a clear message when `DATABASE_URL`/`JWT_SECRET`/`SECRETS_ENCRYPTION_KEY` are missing or defaulted in production.
+
+## Phase 3: Deployment and Operations
+
+- [ ] Verify/refresh the `Dockerfile` for Next 16 + instrumentation workers; add the app itself to `docker-compose.yml` for a one-command production stack.
+- [ ] Readiness vs liveness: extend `/api/health` to check Postgres, Redis, and MinIO; separate `/api/health/ready`.
+- [ ] Error monitoring: optional Sentry (or compatible) wiring via env; capture API route errors, worker errors, and client errors.
+- [ ] Log hygiene: request IDs propagated into worker/agent logs; noisy logs demoted.
+- [ ] Backup/restore: documented `pg_dump` + MinIO mirror scripts and a tested restore procedure.
+- [ ] Migration discipline: `prisma migrate deploy` on boot (optional flag); resolve the current dev-database drift (`migrate resolve --applied` for the four hand-written migrations).
+- [ ] Update CI: typecheck + lint + tests + build gate; publish image on tags.
+
+## Phase 4: Test Safety Net
+
+- [ ] Playwright end-to-end suite (headless, CI-runnable) covering the money paths:
+  - [ ] Login (owner + member) and member scoping (agent sees only assigned module/conversation).
+  - [ ] Conversation reply flow with source badges.
+  - [ ] Order lifecycle: create → approve → fulfill → customer confirmation.
+  - [ ] Reporter chatbot ask + refusal.
+  - [ ] Marketplace install/uninstall with core-module protection.
+- [ ] Seed a deterministic e2e fixture database.
+- [ ] Wire the e2e suite into CI (against the compose stack).
+
+## Phase 5: Runtime Completeness (carried over)
+
+- [ ] Per-account inbound IMAP listeners (registry mirroring the WhatsApp one; credentials already stored per account).
+- [ ] Workflow priority: explicit priority field on flows; deterministic ordering when several match; UI to reorder.
+- [ ] Unify default channels into "primary" channel accounts so every connection is account-based (removes the default-vs-account split on the Channels page).
+
+## Phase 6: Performance
+
+- [ ] Query audit on the hot paths (conversation list, module records, activity log) — verify indexes match filters added in roadmaps 3–4.
+- [ ] Response pagination caps and cursor pagination where offset pagination will degrade (activity log, messages).
+- [ ] Bundle audit: lazy-load the flow editor and kanban; confirm no server-only libs leak client-side.
+- [ ] Light load test (k6 or autocannon) against the compose stack; record baseline numbers.
+
+## Phase 7: UI/UX Overhaul (design-audit driven)
+
+> A live design audit of the running product (desktop 1600px and mobile 375px, all major pages) was performed in July 2026 — full report with per-page findings in [`design-review-2026-07.md`](design-review-2026-07.md). This phase converts its top issues into work, in the review's recommended order.
+
+Foundation (do first — multiplies everything after):
+
+- [ ] Extract shared UI primitives into `src/components/ui/`: `Button`, `Badge`, `StatCard`, `DataTable`, `Modal`, `EmptyState` — one visual language for the whole app.
+- [ ] Semantic color system: a single status/priority/severity/channel color map consumed by both badges and charts (kills the brown "High" bar and the three competing "open" colors).
+- [ ] Dark-mode completion: theme-aware badge variants, chart palettes, and an audit of every light-only `bg-*-50/100` usage.
+
+Page work:
+
+- [ ] Re-skin the Agents page from raw `slate-*` classes onto the `owly-*` theme tokens (currently a visibly different product and dark-mode broken).
+- [ ] Inbox (conversations list) redesign: identicon avatars, channel glyphs, unread weight, assignee chips — this is the most-used screen and furthest from Intercom/Crisp-class polish.
+- [ ] Tickets table: de-emphasize repeated defaults, bulk select + assign, visible pagination.
+- [ ] Settings: cap form width (~560px), scrollable tab bar with fade affordance, sticky save bar.
+- [ ] Sidebar IA: merge Insights into System, collapsible sections, Modules pinned higher.
+
+Quick wins (each under an hour — batch early):
+
+- [ ] Branded splash on login/boot instead of the bare spinner on a blank page.
+- [ ] Customer display-name falls back to contact (number/email) before "Unknown".
+- [ ] Notification badge: mark-read on open, mark-all-read, honest count.
+- [ ] Toasts move out of the Reporter bubble's corner; bubble yields to toasts.
+- [ ] Zero-metric soft states ("No resolutions yet" instead of "0%"; hide "--" satisfaction).
+- [ ] Collapse module-installed KB categories with zero entries.
+
+Acceptance criteria:
+
+- [ ] The ten issues in the design review are resolved and re-verified with fresh screenshots at both widths.
+- [ ] Dark mode has no light-mode artifacts on any main page.
+- [ ] A new page built only from `src/components/ui/` primitives is indistinguishable in style from existing pages.
+
+## Recommended Build Order
+
+1. Phase 1 security (everything else ships on top of it).
+2. Phase 2 reliability (Redis rate limits + worker locks are small and high-value).
+3. Phase 4 e2e tests (protects all later refactors, including the UX overhaul).
+4. Phase 3 deployment/ops.
+5. Phase 7 UX overhaul (with e2e protection in place).
+6. Phase 5 runtime completeness.
+7. Phase 6 performance.
+
+## Definition of Done
+
+- [ ] Secrets are encrypted at rest; security review is clean of high-severity findings.
+- [ ] Two app instances against one database behave correctly (no duplicate beats, jobs, or rate-limit bypass).
+- [ ] `docker compose up` yields a working production stack with health checks and backups documented.
+- [ ] CI runs typecheck, lint, unit, and e2e suites on every push.
+- [ ] The UX audit's top-ten issues are resolved and re-reviewed.
