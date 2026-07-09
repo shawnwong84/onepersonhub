@@ -383,13 +383,13 @@ Agent/human support:
 
 ### Phase 9: Conversation Experience
 
-- [ ] Show agent badge on AI replies.
-- [ ] Show agent badge on workflow replies.
-- [ ] Show channel account in conversation header.
-- [ ] Add conversation filter by agent.
-- [ ] Add conversation filter by channel account.
-- [ ] Add manual agent reassignment on conversation.
-- [ ] Keep human takeover behavior above agent automation.
+- [x] Show agent badge on AI replies (badge label appends the agent name from message metadata).
+- [x] Show agent badge on workflow replies (runtime now stamps agentId/agentName on workflow reply messages).
+- [x] Show channel account in conversation header (account name with identifier tooltip).
+- [x] Add conversation filter by agent (list API `agentId` param + filter select).
+- [x] Add conversation filter by channel account (list API `channelAccountId` param + filter select).
+- [x] Add manual agent reassignment on conversation (header select PUTs `agentId`; unknown agents rejected).
+- [x] Keep human takeover behavior above agent automation (inbound handlers skip automation when `humanTakeover`/`automationPaused` is set).
 
 ### Phase 10: Testing and Observability
 

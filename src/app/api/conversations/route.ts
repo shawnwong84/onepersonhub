@@ -17,8 +17,17 @@ export async function GET(request: NextRequest) {
     const channel = searchParams.get("channel");
     const status = searchParams.get("status");
     const search = searchParams.get("search");
+    const agentId = searchParams.get("agentId");
+    const channelAccountId = searchParams.get("channelAccountId");
 
     const where: Record<string, unknown> = {};
+
+    if (agentId && agentId !== "all") {
+      where.agentId = agentId;
+    }
+    if (channelAccountId && channelAccountId !== "all") {
+      where.channelAccountId = channelAccountId;
+    }
 
     if (channel && channel !== "all") {
       where.channel = channel;
@@ -71,6 +80,12 @@ export async function GET(request: NextRequest) {
           },
           tags: {
             include: { tag: true },
+          },
+          agent: {
+            select: { id: true, name: true },
+          },
+          channelAccount: {
+            select: { id: true, name: true, identifier: true },
           },
         },
       }),

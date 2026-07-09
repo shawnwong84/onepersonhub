@@ -257,6 +257,15 @@ async function saveWorkflowReply(
   stepId: string,
   metadata: Record<string, unknown> = {}
 ) {
+  // Stamp the acting agent so conversation badges can show who replied.
+  if (metadata.agentId && !metadata.agentName) {
+    const agent = await prisma.agent.findUnique({
+      where: { id: String(metadata.agentId) },
+      select: { name: true },
+    });
+    if (agent) metadata.agentName = agent.name;
+  }
+
   const saved = await prisma.message.create({
     data: {
       conversationId,
@@ -995,6 +1004,7 @@ async function executeAction(
 
     replies.push(replyText);
     await saveWorkflowReply(input.conversationId, replyText, flowId, flowName, node.id, {
+      agentId: input.agentId || undefined,
       delivery: emailDelivery.attempted
         ? { channel: "email", to: emailDelivery.to, status: "sent" }
         : { channel: input.channel, status: "saved" },
@@ -2051,6 +2061,7 @@ async function executeAction(
       replies.push(generated.reply);
       await saveWorkflowReply(input.conversationId, generated.reply, flowId, flowName, node.id, {
         source: generated.knowledgeBaseCount > 0 ? "workflow_ai_kb" : "workflow_ai",
+        agentId: input.agentId || undefined,
         knowledgeBaseCount: generated.knowledgeBaseCount,
         knowledgeBaseTitles: generated.knowledgeBaseTitles,
       });

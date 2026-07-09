@@ -50,6 +50,8 @@ interface MessageSourceMetadata {
   flowId?: string;
   flowName?: string;
   stepId?: string;
+  agentId?: string;
+  agentName?: string;
   knowledgeBaseCount?: number;
   knowledgeBaseTitles?: string[];
   knowledgeCitations?: Array<{
@@ -113,6 +115,8 @@ interface ConversationData {
   customer?: CustomerProfileData | null;
   tickets?: TicketData[];
   notes?: InternalNoteData[];
+  agent?: { id: string; name: string } | null;
+  channelAccount?: { id: string; name: string; identifier: string } | null;
   _count: { messages: number };
   tags: TagData[];
   createdAt: string;
@@ -265,7 +269,7 @@ function getMessageSource(message: MessageData) {
 
   if (metadata.source === "workflow") {
     return {
-      label: "Workflow",
+      label: metadata.agentName ? `Workflow - ${metadata.agentName}` : "Workflow",
       detail: metadata.flowName ? `Workflow: ${metadata.flowName}` : "Workflow reply",
       icon: Workflow,
       className: "bg-violet-50 text-violet-700 border-violet-200",
@@ -320,8 +324,9 @@ function getMessageSource(message: MessageData) {
         .filter(Boolean)
         .slice(0, 3)
         .join(", ") || "";
+    const agentSuffix = metadata.agentName ? ` - ${metadata.agentName}` : "";
     return {
-      label: kbCount > 0 ? "AI Reply + KB" : "AI Reply",
+      label: (kbCount > 0 ? "AI Reply + KB" : "AI Reply") + agentSuffix,
       detail:
         metadata.workflowChecked && metadata.workflowReason
           ? metadata.workflowReason
@@ -376,6 +381,10 @@ function ConversationsPageContent() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [channelFilter, setChannelFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [agentFilter, setAgentFilter] = useState("all");
+  const [accountFilter, setAccountFilter] = useState("all");
+  const [agentOptions, setAgentOptions] = useState<{ id: string; name: string }[]>([]);
+  const [accountOptions, setAccountOptions] = useState<{ id: string; name: string }[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [replyText, setReplyText] = useState("");
   const [noteText, setNoteText] = useState("");
@@ -402,6 +411,8 @@ function ConversationsPageContent() {
       const params = new URLSearchParams();
       if (channelFilter !== "all") params.set("channel", channelFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (agentFilter !== "all") params.set("agentId", agentFilter);
+      if (accountFilter !== "all") params.set("channelAccountId", accountFilter);
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
 
       const res = await fetch(`/api/conversations?${params.toString()}`);
@@ -414,7 +425,7 @@ function ConversationsPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [channelFilter, statusFilter, searchQuery]);
+  }, [channelFilter, statusFilter, agentFilter, accountFilter, searchQuery]);
 
   const fetchConversationDetail = useCallback(async (id: string, silent = false) => {
     if (!silent) setDetailLoading(true);
@@ -453,6 +464,35 @@ function ConversationsPageContent() {
     }
   }, []);
 
+  const fetchRoutingOptions = useCallback(async () => {
+    try {
+      const [agentsRes, accountsRes] = await Promise.all([
+        fetch("/api/agents?limit=100"),
+        fetch("/api/channel-accounts?limit=100"),
+      ]);
+      if (agentsRes.ok) {
+        const data = await agentsRes.json();
+        setAgentOptions(
+          unwrapListResponse<{ id: string; name: string }>(data).map((agent) => ({
+            id: agent.id,
+            name: agent.name,
+          }))
+        );
+      }
+      if (accountsRes.ok) {
+        const data = await accountsRes.json();
+        setAccountOptions(
+          unwrapListResponse<{ id: string; name: string }>(data).map((account) => ({
+            id: account.id,
+            name: account.name,
+          }))
+        );
+      }
+    } catch (error) {
+      console.error("Failed to fetch routing options:", error);
+    }
+  }, []);
+
   const fetchPresence = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/conversations/${id}/presence`);
@@ -479,7 +519,8 @@ function ConversationsPageContent() {
   useEffect(() => {
     fetchConversations();
     fetchTeamMembers();
-  }, [fetchConversations, fetchTeamMembers]);
+    fetchRoutingOptions();
+  }, [fetchConversations, fetchTeamMembers, fetchRoutingOptions]);
 
   useEffect(() => {
     if (!targetConversationId || selectedId === targetConversationId) return;
@@ -673,6 +714,26 @@ function ConversationsPageContent() {
     }
   };
 
+  const handleReassignAgent = async (agentId: string) => {
+    if (!selectedId || assignmentLoading) return;
+    setAssignmentLoading(true);
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId: agentId || null }),
+      });
+      if (res.ok) {
+        await fetchConversationDetail(selectedId, true);
+        fetchConversations();
+      }
+    } catch (error) {
+      console.error("Failed to reassign agent:", error);
+    } finally {
+      setAssignmentLoading(false);
+    }
+  };
+
   const handleAssignConversation = async (memberId: string) => {
     if (!selectedId || assignmentLoading) return;
     setAssignmentLoading(true);
@@ -813,6 +874,38 @@ function ConversationsPageContent() {
                 ))}
               </select>
             </div>
+            {(agentOptions.length > 0 || accountOptions.length > 0) && (
+              <div className="flex gap-2 mt-2">
+                {agentOptions.length > 0 && (
+                  <select
+                    value={agentFilter}
+                    onChange={(e) => setAgentFilter(e.target.value)}
+                    className="flex-1 text-xs px-2 py-1.5 border border-owly-border rounded-lg bg-owly-bg focus:outline-none focus:ring-2 focus:ring-owly-primary/30 text-owly-text"
+                  >
+                    <option value="all">All agents</option>
+                    {agentOptions.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {accountOptions.length > 0 && (
+                  <select
+                    value={accountFilter}
+                    onChange={(e) => setAccountFilter(e.target.value)}
+                    className="flex-1 text-xs px-2 py-1.5 border border-owly-border rounded-lg bg-owly-bg focus:outline-none focus:ring-2 focus:ring-owly-primary/30 text-owly-text"
+                  >
+                    <option value="all">All accounts</option>
+                    {accountOptions.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Conversation List */}
@@ -1037,6 +1130,14 @@ function ConversationsPageContent() {
                     <span>
                       {getChannelLabel(selectedConversation.channel)}
                     </span>
+                    {selectedConversation.channelAccount && (
+                      <>
+                        <span>--</span>
+                        <span title={selectedConversation.channelAccount.identifier}>
+                          {selectedConversation.channelAccount.name}
+                        </span>
+                      </>
+                    )}
                     {selectedConversation.customerContact && (
                       <>
                         <span>--</span>
@@ -1046,6 +1147,22 @@ function ConversationsPageContent() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
+                  {agentOptions.length > 0 && (
+                    <select
+                      value={selectedConversation.agent?.id || ""}
+                      onChange={(e) => handleReassignAgent(e.target.value)}
+                      disabled={assignmentLoading}
+                      className="max-w-[150px] text-xs px-2 py-1.5 border border-owly-border rounded-lg bg-owly-bg focus:outline-none focus:ring-2 focus:ring-owly-primary/30 text-owly-text"
+                      title="AI agent handling this conversation"
+                    >
+                      <option value="">No AI agent</option>
+                      {agentOptions.map((agent) => (
+                        <option key={agent.id} value={agent.id}>
+                          {agent.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <select
                     value={selectedConversation.metadata?.assignedToId || ""}
                     onChange={(e) => handleAssignConversation(e.target.value)}

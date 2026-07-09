@@ -23,6 +23,12 @@ export async function GET(
           orderBy: { createdAt: "asc" },
         },
         customer: true,
+        agent: {
+          select: { id: true, name: true },
+        },
+        channelAccount: {
+          select: { id: true, name: true, identifier: true },
+        },
         tags: {
           include: { tag: true },
         },
@@ -72,7 +78,14 @@ export async function PUT(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { status, customerName, customerContact, summary, satisfaction, tagIds } = body;
+    const { status, customerName, customerContact, summary, satisfaction, tagIds, agentId } = body;
+
+    if (agentId !== undefined && agentId !== null && typeof agentId === "string" && agentId) {
+      const agentExists = await prisma.agent.findUnique({ where: { id: agentId }, select: { id: true } });
+      if (!agentExists) {
+        return NextResponse.json({ error: "Agent not found" }, { status: 400 });
+      }
+    }
 
     const validStatuses = ["active", "resolved", "closed", "escalated", "snoozed"];
     if (status !== undefined && !validStatuses.includes(status)) {
@@ -107,10 +120,17 @@ export async function PUT(
         ...(customerContact !== undefined && { customerContact: customerContact.trim() }),
         ...(summary !== undefined && { summary: summary.trim() }),
         ...(satisfaction !== undefined && { satisfaction }),
+        ...(agentId !== undefined && { agentId: agentId || null }),
       },
       include: {
         messages: {
           orderBy: { createdAt: "asc" },
+        },
+        agent: {
+          select: { id: true, name: true },
+        },
+        channelAccount: {
+          select: { id: true, name: true, identifier: true },
         },
         tags: {
           include: { tag: true },
@@ -133,6 +153,9 @@ export async function PUT(
     }
     if (satisfaction !== undefined && satisfaction !== existing.satisfaction) {
       changes.satisfaction = { from: existing.satisfaction, to: satisfaction };
+    }
+    if (agentId !== undefined && (agentId || null) !== existing.agentId) {
+      changes.agentId = { from: existing.agentId, to: agentId || null };
     }
 
     if (Object.keys(changes).length > 0) {
