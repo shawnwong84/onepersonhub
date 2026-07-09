@@ -1,6 +1,7 @@
 "use client";
 
 import { Header } from "@/components/layout/header";
+import { ChannelAccountsSection } from "@/components/channels/channel-accounts";
 import {
   MessageCircle,
   Mail,
@@ -1086,26 +1087,29 @@ export default function ChannelsPage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl">
-            <WhatsAppCard
-              channel={getChannel("whatsapp")}
-              onSave={handleSave}
-              onAction={handleAction}
-              saving={saving}
-            />
-            <EmailCard
-              channel={getChannel("email")}
-              onSave={handleSave}
-              onAction={handleAction}
-              saving={saving}
-            />
-            <PhoneCard
-              channel={getChannel("phone")}
-              onSave={handleSave}
-              onAction={handleAction}
-              saving={saving}
-            />
-          </div>
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl">
+              <WhatsAppCard
+                channel={getChannel("whatsapp")}
+                onSave={handleSave}
+                onAction={handleAction}
+                saving={saving}
+              />
+              <EmailCard
+                channel={getChannel("email")}
+                onSave={handleSave}
+                onAction={handleAction}
+                saving={saving}
+              />
+              <PhoneCard
+                channel={getChannel("phone")}
+                onSave={handleSave}
+                onAction={handleAction}
+                saving={saving}
+              />
+            </div>
+            <ChannelAccountsSection />
+          </>
         )}
       </div>
 

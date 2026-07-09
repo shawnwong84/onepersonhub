@@ -315,7 +315,7 @@ Agent/human support:
 - [x] Add sidebar navigation item: `Agents`.
 - [x] Add Agents list page.
 - [x] Add Agent create/edit form.
-- [ ] Add Agent detail page.
+- [x] Add Agent detail page (`/agents/[id]` opens the editor for that agent).
 - [x] Add status toggle.
 - [x] Add prompt/personality editor.
 - [x] Add fallback and automation mode controls.
@@ -324,13 +324,13 @@ Agent/human support:
 
 ### Phase 3: Channel Account UI
 
-- [ ] Update Channels page to show channel accounts.
+- [x] Update Channels page to show channel accounts (Channel accounts section: list with default agent, automation mode, activity, status).
 - [x] Add create/edit channel account modal.
 - [x] Add assign default agent control.
-- [ ] Add multiple WhatsApp account support UI.
-- [ ] Add multiple email account support UI.
-- [ ] Add account health/status badges.
-- [ ] Add reconnect/test actions per account.
+- [x] Add multiple WhatsApp account support UI (any number of accounts per channel; runtime is still single-client, see Phase 8).
+- [x] Add multiple email account support UI (same caveat as above).
+- [x] Add account health/status badges (status column: connected/disconnected/inactive).
+- [ ] Add reconnect/test actions per account (needs the Phase 8 per-account runtime).
 
 ### Phase 4: Agent Assignment
 
@@ -365,10 +365,10 @@ Agent/human support:
 ### Phase 7: Workflow Scope Filtering
 
 - [x] Add flow assignment to agents.
-- [ ] Filter workflow matching by selected agent.
+- [x] Filter workflow matching by selected agent (runtime limits candidate flows to the routed agent's assigned flows).
 - [ ] Filter workflow matching by channel account.
 - [ ] Add priority behavior for multiple matching workflows.
-- [ ] Log skipped workflows with agent mismatch reason.
+- [x] Log skipped workflows with agent mismatch reason (skipped runs record why, including agent-scoped no-match).
 
 ### Phase 8: Multi-Account Channel Runtime
 
