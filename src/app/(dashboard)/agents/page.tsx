@@ -53,6 +53,7 @@ interface Agent {
   automationMode: string;
   requireApproval: boolean;
   useGlobalKnowledge: boolean;
+  escalationDepartmentId?: string | null;
   metadata?: {
     channel?: string;
   } | null;
@@ -79,6 +80,7 @@ const defaultForm = {
   fallbackMode: "ai_reply",
   requireApproval: false,
   useGlobalKnowledge: true,
+  escalationDepartmentId: "",
   channel: "whatsapp",
   categoryIds: [] as string[],
   flowIds: [] as string[],
@@ -112,6 +114,7 @@ function formFromAgent(agent: Agent) {
     fallbackMode: agent.fallbackMode,
     requireApproval: agent.requireApproval,
     useGlobalKnowledge: agent.useGlobalKnowledge,
+    escalationDepartmentId: agent.escalationDepartmentId || "",
     channel: agent.metadata?.channel || "whatsapp",
     categoryIds:
       agent.knowledgeScopes
@@ -120,6 +123,28 @@ function formFromAgent(agent: Agent) {
     flowIds: agent.workflows?.map((workflow) => workflow.flowId) || [],
     tools: agent.tools?.length ? agent.tools : defaultForm.tools,
   };
+}
+
+interface AgentAnalytics {
+  id: string;
+  name: string;
+  conversations: number;
+  aiReplies: number;
+  workflowReplies: number;
+  aiFallbackRate: number;
+  workflowSuccessRate: number;
+  workflowRuns: number;
+  handoffRate: number;
+  handoffs: number;
+}
+
+interface AgentTestResult {
+  reply: string;
+  replyError: string;
+  knowledge: { id: string; title: string; score: number }[];
+  knowledgeScopeCount: number;
+  usesGlobalKnowledge: boolean;
+  matchedFlows: { id: string; name: string }[];
 }
 
 function toggleValue(values: string[], value: string) {
@@ -138,6 +163,39 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+  const [analytics, setAnalytics] = useState<AgentAnalytics[]>([]);
+  const [testOpen, setTestOpen] = useState(false);
+  const [testMessage, setTestMessage] = useState("");
+  const [testChannel, setTestChannel] = useState("whatsapp");
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResult, setTestResult] = useState<AgentTestResult | null>(null);
+
+  const runAgentTest = async () => {
+    if (!selectedAgentId || !testMessage.trim() || testRunning) return;
+    setTestRunning(true);
+    try {
+      const res = await fetch(`/api/agents/${selectedAgentId}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: testMessage.trim(), channel: testChannel }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Test failed");
+      setTestResult(body as AgentTestResult);
+    } catch (err) {
+      setTestResult({
+        reply: "",
+        replyError: err instanceof Error ? err.message : "Test failed",
+        knowledge: [],
+        knowledgeScopeCount: 0,
+        usesGlobalKnowledge: false,
+        matchedFlows: [],
+      });
+    } finally {
+      setTestRunning(false);
+    }
+  };
 
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedAgentId) || null,
@@ -147,15 +205,26 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
   const loadData = useCallback(async (preferredAgentId?: string | null) => {
     setError("");
     try {
-      const [agentRes, categoryRes, flowRes] = await Promise.all([
+      const [agentRes, categoryRes, flowRes, departmentRes, analyticsRes] = await Promise.all([
         fetch("/api/agents?limit=100"),
         fetch("/api/knowledge/categories?limit=100"),
         fetch("/api/flows?limit=100"),
+        fetch("/api/team/departments"),
+        fetch("/api/agents/analytics?days=30"),
       ]);
 
       if (!agentRes.ok) throw new Error("Failed to fetch agents");
       if (!categoryRes.ok) throw new Error("Failed to fetch KB categories");
       if (!flowRes.ok) throw new Error("Failed to fetch workflows");
+      if (departmentRes.ok) {
+        const departmentPayload = await departmentRes.json();
+        const list = Array.isArray(departmentPayload) ? departmentPayload : departmentPayload.data || [];
+        setDepartments(list.map((dept: { id: string; name: string }) => ({ id: dept.id, name: dept.name })));
+      }
+      if (analyticsRes.ok) {
+        const analyticsPayload = await analyticsRes.json();
+        setAnalytics(analyticsPayload.agents || []);
+      }
 
       const [agentPayload, categoryPayload, flowPayload] =
         await Promise.all([
@@ -370,6 +439,20 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
             <div className="flex items-center gap-2">
               {selectedAgentId && (
                 <button
+                  onClick={() => {
+                    setTestResult(null);
+                    setTestMessage("");
+                    setTestOpen(true);
+                  }}
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-md border border-owly-border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <Bot className="h-4 w-4" />
+                  Test agent
+                </button>
+              )}
+              {selectedAgentId && (
+                <button
                   onClick={deleteAgent}
                   disabled={saving}
                   className="inline-flex items-center gap-2 rounded-md border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
@@ -388,6 +471,34 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
               </button>
             </div>
           </div>
+
+          {selectedAgentId && (() => {
+            const stats = analytics.find((entry) => entry.id === selectedAgentId);
+            if (!stats) return null;
+            return (
+              <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">Conversations (30d)</p>
+                  <p className="text-xl font-bold text-slate-900">{stats.conversations}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">AI fallback rate</p>
+                  <p className="text-xl font-bold text-slate-900">{stats.aiFallbackRate}%</p>
+                  <p className="text-[11px] text-slate-400">{stats.aiReplies} AI / {stats.workflowReplies} workflow replies</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">Workflow success</p>
+                  <p className="text-xl font-bold text-slate-900">{stats.workflowSuccessRate}%</p>
+                  <p className="text-[11px] text-slate-400">{stats.workflowRuns} runs</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <p className="text-xs text-slate-500">Human handoff rate</p>
+                  <p className="text-xl font-bold text-slate-900">{stats.handoffRate}%</p>
+                  <p className="text-[11px] text-slate-400">{stats.handoffs} takeovers</p>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <section className="space-y-5">
@@ -589,6 +700,24 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                       <option value="no_reply">No auto reply</option>
                     </select>
                   </label>
+                  <label className="space-y-1 block">
+                    <span className="text-sm font-medium text-slate-700">Escalation department</span>
+                    <select
+                      value={form.escalationDepartmentId}
+                      onChange={(event) =>
+                        setForm({ ...form, escalationDepartmentId: event.target.value })
+                      }
+                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      <option value="">No escalation department</option>
+                      {departments.map((dept) => (
+                        <option key={dept.id} value={dept.id}>{dept.name}</option>
+                      ))}
+                    </select>
+                    <span className="block text-xs text-slate-400">
+                      Human handoffs from this agent route to this department.
+                    </span>
+                  </label>
                   <label className="flex items-center gap-3 rounded-lg border border-slate-200 p-3">
                     <input
                       type="checkbox"
@@ -666,6 +795,107 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
           </div>
         </main>
       </div>
+
+      {testOpen && selectedAgentId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Test console</h3>
+                <p className="text-sm text-slate-500">
+                  Dry-run this agent with its KB scope and workflows. Nothing is sent to customers.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTestOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              >
+                <Trash2 className="hidden" />
+                <span className="text-lg leading-none">&times;</span>
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+              <div className="flex gap-2">
+                <select
+                  value={testChannel}
+                  onChange={(event) => setTestChannel(event.target.value)}
+                  className="h-10 rounded-md border border-slate-200 px-3 text-sm"
+                >
+                  {CHANNEL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+                <input
+                  value={testMessage}
+                  onChange={(event) => setTestMessage(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") runAgentTest();
+                  }}
+                  placeholder="Type a sample customer message..."
+                  className="h-10 flex-1 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-owly-primary"
+                />
+                <button
+                  type="button"
+                  disabled={testRunning || !testMessage.trim()}
+                  onClick={runAgentTest}
+                  className="h-10 rounded-md bg-owly-primary px-4 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {testRunning ? "Running..." : "Run"}
+                </button>
+              </div>
+
+              {testResult && (
+                <>
+                  {testResult.replyError && (
+                    <p className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+                      {testResult.replyError}
+                    </p>
+                  )}
+                  {testResult.reply && (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Agent reply</p>
+                      <p className="whitespace-pre-wrap text-sm text-slate-800">{testResult.reply}</p>
+                    </div>
+                  )}
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-lg border border-slate-200 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Knowledge used ({testResult.knowledgeScopeCount} scope{testResult.knowledgeScopeCount === 1 ? "" : "s"}
+                        {testResult.usesGlobalKnowledge ? " + global" : ""})
+                      </p>
+                      {testResult.knowledge.length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-500">No KB entries matched.</p>
+                      ) : (
+                        <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                          {testResult.knowledge.map((item) => (
+                            <li key={item.id} className="flex justify-between gap-2">
+                              <span className="truncate">{item.title}</span>
+                              <span className="text-xs text-slate-400">{Math.round(item.score * 100)}%</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workflows that would consider this</p>
+                      {testResult.matchedFlows.length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-500">None - the agent would fall back per its policy.</p>
+                      ) : (
+                        <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                          {testResult.matchedFlows.map((flow) => (
+                            <li key={flow.id}>{flow.name}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

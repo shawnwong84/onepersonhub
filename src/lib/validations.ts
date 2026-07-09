@@ -219,6 +219,21 @@ export const createNoteSchema = z.object({
 });
 
 // Pagination helper
+export const agentInputSchema = z.object({
+  name: z.string().min(1, "Agent name is required").max(120),
+  status: z.enum(["active", "draft", "disabled"]).optional(),
+  tone: z.enum(["friendly", "professional", "casual", "formal", "empathetic"]).optional(),
+  fallbackMode: z.enum(["ai_reply", "human_handoff", "no_reply"]).optional(),
+  automationMode: z.enum(["workflow_first", "ai_first", "approval_required", "manual_only"]).optional(),
+});
+
+export const channelAccountInputSchema = z.object({
+  channel: z.enum(["whatsapp", "email", "phone", "sms", "telegram"]),
+  name: z.string().min(1, "Account name is required").max(120),
+  identifier: z.string().min(1, "Identifier is required").max(200),
+  automationMode: z.enum(["workflow_first", "ai_first", "approval_required", "manual_only"]).optional(),
+});
+
 export { paginationSchema };
 
 // Validation helper

@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { emitNewMessage } from "@/lib/realtime";
 import { sendWhatsAppMessage } from "@/lib/channels/whatsapp";
+import { sendWhatsAppAccountMessage } from "@/lib/channels/whatsapp-accounts";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function GET(
@@ -96,10 +97,22 @@ export async function POST(
 
     if (messageRole === "admin" && conversation.channel === "whatsapp") {
       try {
-        const delivered = await sendWhatsAppMessage(
-          conversation.customerContact,
-          content.trim()
-        );
+        // Route through the conversation's channel account when it has a
+        // connected client; fall back to the default WhatsApp client.
+        let delivered = false;
+        if (conversation.channelAccountId) {
+          delivered = await sendWhatsAppAccountMessage(
+            conversation.channelAccountId,
+            conversation.customerContact,
+            content.trim()
+          );
+        }
+        if (!delivered) {
+          delivered = await sendWhatsAppMessage(
+            conversation.customerContact,
+            content.trim()
+          );
+        }
         deliveryStatus = delivered ? "sent" : "failed";
       } catch (error) {
         logger.error("Failed to send WhatsApp manual reply:", error);

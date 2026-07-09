@@ -202,9 +202,9 @@ Goal: let admins build a searchable knowledge base from uploaded documents, edit
 - [x] Add Redis service for distributed cache and RAG query/embedding cache.
 - [x] Add document reader preview for uploaded source files.
 - [x] Add document editor for text, Markdown, and DOCX-derived content.
-- [ ] Add Excel-style table editor for CSV/XLSX-derived content.
+- [x] Add Excel-style table editor for CSV/XLSX-derived content (Text/Table toggle on the document editor; cell edits round-trip to the document text as CSV).
   - [x] CSV/XLSX table preview.
-  - [ ] Editable cell grid.
+  - [x] Editable cell grid (per-cell inputs, add/remove rows).
 - [x] Add OCR ingestion for scanned PDFs and images.
   - [x] Image OCR.
   - [x] Scanned PDF OCR.
@@ -222,10 +222,10 @@ Goal: let admins build a searchable knowledge base from uploaded documents, edit
   - [x] Dedicated token usage report UI with date ranges.
 - [x] Add token budget settings and warning thresholds.
 - [x] Add Firecrawl website ingestion integration.
-- [ ] Support sitemap crawl, single URL scrape, include/exclude URL patterns, crawl depth, and scheduled recrawls.
+- [x] Support sitemap crawl, single URL scrape, include/exclude URL patterns, crawl depth, and scheduled recrawls (Firecrawl-backed; `website-crawler.ts`).
   - [x] Single URL scrape.
   - [x] Firecrawl sitemap/depth crawl with include/exclude patterns.
-  - [ ] Scheduled recrawl worker.
+  - [x] Scheduled recrawl worker (10-minute check from instrumentation; hourly/daily/weekly schedules re-index due sources).
 - [x] Store crawl source URL, crawl timestamp, canonical URL, title, and extracted content.
 - [x] Add ingestion logs with recoverable errors and retry action.
 - [x] Add admin notification when ingestion completes or fails.

@@ -20,6 +20,7 @@ interface WorkflowRuntimeInput {
   conversationId: string;
   customerId?: string | null;
   agentId?: string | null;
+  channelAccountId?: string | null;
   message: string;
   saveInputMessage?: boolean;
 }
@@ -615,6 +616,7 @@ async function sendWorkflowEmailReply(
       channel: true,
       customerContact: true,
       customerName: true,
+      channelAccountId: true,
     },
   });
 
@@ -638,7 +640,8 @@ async function sendWorkflowEmailReply(
   const sent = await sendEmail(
     to,
     `Re: ${flowName}`,
-    replyText
+    replyText,
+    conversation.channelAccountId
   );
 
   return {
@@ -1958,6 +1961,148 @@ async function executeAction(
     return responseText;
   }
 
+  if (data.actionType === "call_mcp_tool") {
+    const toolName = data.mcpTool || "";
+    const serverRef = data.mcpServer || "";
+    const serverUrl = serverRef.startsWith("http") ? serverRef : "";
+    if (!toolName || !serverUrl) {
+      await recordWorkflowRunStep(runId, {
+        nodeId: node.id,
+        nodeLabel: data.label || "Call MCP Tool",
+        nodeType: data.nodeType,
+        actionType: data.actionType,
+        status: "skipped",
+        message: !toolName
+          ? "No MCP tool name configured"
+          : `MCP server "${serverRef}" is not a URL. Set the step's server to the MCP endpoint URL.`,
+        metadata: { mcpServer: serverRef, mcpTool: toolName },
+      });
+      return "";
+    }
+
+    try {
+      let args: Record<string, unknown> = {};
+      const renderedInput = renderWorkflowTemplate(data.mcpInput || "{}", input, flowName, state);
+      try {
+        args = JSON.parse(renderedInput) as Record<string, unknown>;
+      } catch {
+        args = { input: renderedInput };
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(serverUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: node.id,
+          method: "tools/call",
+          params: { name: toolName, arguments: args },
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const body = (await response.json().catch(() => ({}))) as {
+        result?: { content?: Array<{ type?: string; text?: string }> };
+        error?: { message?: string };
+      };
+      if (!response.ok || body.error) {
+        throw new Error(body.error?.message || `MCP server responded ${response.status}`);
+      }
+
+      const output = Array.isArray(body.result?.content)
+        ? body.result.content.map((item) => item.text || "").filter(Boolean).join("\n")
+        : JSON.stringify(body.result ?? {});
+
+      await recordWorkflowRunStep(runId, {
+        nodeId: node.id,
+        nodeLabel: data.label || "Call MCP Tool",
+        nodeType: data.nodeType,
+        actionType: data.actionType,
+        status: "completed",
+        message: `Called MCP tool ${toolName}`,
+        metadata: { mcpServer: serverUrl, mcpTool: toolName, outputPreview: truncate(output, 1000) },
+      });
+      return output;
+    } catch (error) {
+      await recordWorkflowRunStep(runId, {
+        nodeId: node.id,
+        nodeLabel: data.label || "Call MCP Tool",
+        nodeType: data.nodeType,
+        actionType: data.actionType,
+        status: "failed",
+        message: error instanceof Error ? error.message : String(error),
+        metadata: { mcpServer: serverUrl, mcpTool: toolName },
+      });
+      await logActivity({
+        action: "workflow.action_failed",
+        entity: ACTIVITY_ENTITIES.WORKFLOW,
+        entityId: flowId,
+        description: `${flowName}: MCP tool call failed.`,
+        metadata: {
+          flowId,
+          flowName,
+          runId: runId || null,
+          conversationId: input.conversationId,
+          stepId: node.id,
+          actionType: data.actionType,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return "";
+    }
+  }
+
+  if (data.actionType === "run_skill") {
+    try {
+      const generated = await generateWorkflowLlmOutput(
+        input,
+        flowName,
+        data.skillPrompt || `Run the "${data.skillName || "unnamed"}" skill on the customer message.`,
+        "{{message}}",
+        "text",
+        state
+      );
+      if (!generated.ok || !generated.output.trim()) {
+        await recordWorkflowRunStep(runId, {
+          nodeId: node.id,
+          nodeLabel: data.label || "Run Skill",
+          nodeType: data.nodeType,
+          actionType: data.actionType,
+          status: "skipped",
+          message: generated.reason || "Skill produced no output",
+          metadata: { skillName: data.skillName || "" },
+        });
+        return "";
+      }
+
+      const output = generated.output.trim();
+      await recordWorkflowRunStep(runId, {
+        nodeId: node.id,
+        nodeLabel: data.label || "Run Skill",
+        nodeType: data.nodeType,
+        actionType: data.actionType,
+        status: "completed",
+        message: `Ran skill ${data.skillName || ""}`.trim(),
+        metadata: { skillName: data.skillName || "", outputPreview: truncate(output, 1000) },
+      });
+      return output;
+    } catch (error) {
+      await recordWorkflowRunStep(runId, {
+        nodeId: node.id,
+        nodeLabel: data.label || "Run Skill",
+        nodeType: data.nodeType,
+        actionType: data.actionType,
+        status: "failed",
+        message: error instanceof Error ? error.message : String(error),
+        metadata: { skillName: data.skillName || "" },
+      });
+      return "";
+    }
+  }
+
   if (data.actionType === "llm" || data.nodeType === "llm") {
     try {
       const generated = await generateWorkflowLlmOutput(
@@ -2340,6 +2485,7 @@ export async function runChannelWorkflows(
       message: input.message,
       metadata: {
         checkedFlows: flows.length,
+        agentId: input.agentId || null,
       },
     });
 
@@ -2402,6 +2548,27 @@ export async function runChannelWorkflows(
           expectedChannel: trigger.data.channel,
         },
       });
+      continue;
+    }
+    if (
+      trigger?.data?.channelAccountId &&
+      input.channelAccountId &&
+      trigger.data.channelAccountId !== input.channelAccountId
+    ) {
+      const reason = `${flow.name}: channel account did not match`;
+      skipReasons.push(reason);
+      await recordWorkflowRunStep(run?.id, {
+        nodeId: trigger.id,
+        nodeLabel: trigger.data.label || "Workflow Trigger",
+        nodeType: "trigger",
+        status: "skipped",
+        message: reason,
+        metadata: {
+          expectedChannelAccountId: trigger.data.channelAccountId,
+          receivedChannelAccountId: input.channelAccountId,
+        },
+      });
+      await finishWorkflowRun(run?.id, "skipped", reason);
       continue;
     }
     if (trigger?.data) {

@@ -5,6 +5,7 @@ import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
 import type { Prisma } from "@/generated/prisma/client";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
+import { agentInputSchema, validateBody } from "@/lib/validations";
 
 function asString(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
@@ -140,8 +141,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const name = asString(body.name);
 
-    if (!name) {
-      return NextResponse.json({ error: "Agent name is required" }, { status: 400 });
+    const validation = validateBody(agentInputSchema, {
+      name,
+      ...(body.status !== undefined && { status: body.status }),
+      ...(body.tone !== undefined && { tone: body.tone }),
+      ...(body.fallbackMode !== undefined && { fallbackMode: body.fallbackMode }),
+      ...(body.automationMode !== undefined && { automationMode: body.automationMode }),
+    });
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
     const categoryIds = asStringArray(body.categoryIds);

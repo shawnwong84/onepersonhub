@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Pencil, Plus, Trash2, Users, X } from "lucide-react";
+import { Loader2, Pencil, Plus, QrCode, Trash2, Users, Wifi, WifiOff, X } from "lucide-react";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
 interface AgentOption {
@@ -51,6 +51,8 @@ export function ChannelAccountsSection() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [qrAccount, setQrAccount] = useState<ChannelAccountData | null>(null);
+  const [qrState, setQrState] = useState<{ status: string; qr: string | null; message: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -74,6 +76,55 @@ export function ChannelAccountsSection() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Poll connection status while the QR modal is open.
+  useEffect(() => {
+    if (!qrAccount) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/channel-accounts/${qrAccount.id}/actions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "status" }),
+        });
+        if (res.ok && !cancelled) {
+          const body = await res.json();
+          setQrState(body);
+          if (body.status === "connected") {
+            await load();
+          }
+        }
+      } catch {
+        // polling is best effort
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [qrAccount, load]);
+
+  async function accountAction(account: ChannelAccountData, action: string) {
+    const res = await fetch(`/api/channel-accounts/${account.id}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    if (res.ok) {
+      if (action === "connect" || action === "reconnect") {
+        setQrState(await res.json());
+        setQrAccount(account);
+      } else {
+        await load();
+      }
+    } else {
+      const body = await res.json().catch(() => ({}));
+      setError(body?.error || "Account action failed");
+    }
+  }
 
   function openCreate() {
     setEditing(null);
@@ -223,6 +274,27 @@ export function ChannelAccountsSection() {
                   </td>
                   <td className="px-5 py-3 text-right">
                     <div className="inline-flex gap-1">
+                      {account.channel === "whatsapp" && account.isActive && (
+                        account.status === "connected" ? (
+                          <button
+                            type="button"
+                            onClick={() => accountAction(account, "disconnect")}
+                            className="rounded-lg p-1.5 text-green-600 hover:bg-green-50"
+                            title="Disconnect this WhatsApp account"
+                          >
+                            <Wifi className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => accountAction(account, "connect")}
+                            className="rounded-lg p-1.5 text-owly-text-light hover:bg-owly-primary-50 hover:text-owly-primary"
+                            title="Connect this WhatsApp account (scan QR)"
+                          >
+                            <WifiOff className="h-4 w-4" />
+                          </button>
+                        )
+                      )}
                       <button
                         type="button"
                         onClick={() => openEdit(account)}
@@ -245,6 +317,47 @@ export function ChannelAccountsSection() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {qrAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-owly-border bg-owly-surface p-6 text-center shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-2 font-semibold text-owly-text">
+                <QrCode className="h-4 w-4 text-owly-primary" />
+                Connect {qrAccount.name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setQrAccount(null);
+                  setQrState(null);
+                }}
+                className="rounded-lg p-1.5 text-owly-text-light hover:bg-owly-bg"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-4">
+              {qrState?.status === "connected" ? (
+                <p className="rounded-lg bg-green-50 px-4 py-6 text-sm font-semibold text-green-700">
+                  Connected! This account now receives and sends messages.
+                </p>
+              ) : qrState?.qr ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={qrState.qr} alt="WhatsApp QR code" className="mx-auto h-56 w-56" />
+              ) : (
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-owly-primary" />
+                  <p className="text-sm text-owly-text-light">{qrState?.message || "Starting WhatsApp client..."}</p>
+                </div>
+              )}
+            </div>
+            <p className="mt-3 text-xs text-owly-text-light">
+              Open WhatsApp on the phone for {qrAccount.identifier}, then Linked devices &gt; Link a device.
+            </p>
+          </div>
         </div>
       )}
 

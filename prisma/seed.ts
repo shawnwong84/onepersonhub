@@ -158,6 +158,36 @@ async function main() {
     await prisma.sLARule.upsert({ where: { id: sla.id }, update: {}, create: sla });
   }
 
+  // Demo AI agents
+  const demoAgents = [
+    {
+      id: "agent-support",
+      name: "Customer Support Agent",
+      description: "Handles general customer questions over WhatsApp with the support knowledge base.",
+      tone: "friendly",
+      automationMode: "workflow_first",
+      fallbackMode: "ai_reply",
+      systemPrompt:
+        "You are a friendly customer support agent. Answer clearly, cite knowledge base facts, and escalate anything sensitive.",
+      metadata: { channel: "whatsapp" },
+    },
+    {
+      id: "agent-sales",
+      name: "Sales Agent",
+      description: "Qualifies leads and answers product and pricing questions.",
+      tone: "professional",
+      automationMode: "ai_first",
+      fallbackMode: "human_handoff",
+      systemPrompt:
+        "You are a professional sales assistant. Qualify the lead, answer product questions, and hand off ready buyers to the team.",
+      metadata: { channel: "email" },
+    },
+  ];
+
+  for (const agent of demoAgents) {
+    await prisma.agent.upsert({ where: { id: agent.id }, update: {}, create: agent });
+  }
+
   console.log("Seed data created successfully!");
   console.log("Default admin: username=admin, password=admin123");
 }

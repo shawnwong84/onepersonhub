@@ -21,8 +21,8 @@ Build Cosstigo into a reliable customer service workspace where channel messages
 - [x] Add customer service queue views: unassigned, waiting for approval, human takeover, SLA risk (conversation status filters).
 - [x] Add workflow templates for common support flows. (`workflow-templates.ts` + `/api/flow-templates` install.)
 - [x] Add execution adapters for email, AI generation, ticket creation, assignment, and notifications (`send_email`, `ai_reply`/`llm`, `create_ticket`, `assign_agent`, `send_notification`). MCP tools and skill adapters remain open:
-  - [ ] MCP tool call adapter.
-  - [ ] Skill call adapter.
+  - [x] MCP tool call adapter (`call_mcp_tool`: JSON-RPC `tools/call` against the configured server URL, output feeds later steps).
+  - [x] Skill call adapter (`run_skill`: runs the skill prompt through the LLM, output feeds later steps).
 - [x] Add ticket lifecycle automation: when support closes a ticket, auto-reply to the customer on the original channel.
 - [x] Add scheduled delay execution with a background worker. (`workflow-worker.ts` processes due `WorkflowJob`s every 30s from `instrumentation.ts`.)
 - [x] Add branch rendering for true/false condition paths. (Condition steps show true/false badges; "If false" selector jumps to a later step or stops; persisted as sourceHandle:"false" edges the runtime already executes.)

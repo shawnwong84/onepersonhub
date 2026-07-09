@@ -122,13 +122,22 @@ function markMessageProcessing(message: Message): boolean {
   return true;
 }
 
-async function processIncomingMessage(message: Message): Promise<void> {
+export interface WhatsAppAccountContext {
+  id: string;
+  identifier: string;
+}
+
+export async function processIncomingMessage(
+  message: Message,
+  account?: WhatsAppAccountContext
+): Promise<void> {
   if (message.fromMe) return;
   if (!markMessageProcessing(message)) return;
 
   logger.info("[WhatsApp] Incoming message received", {
     from: message.from,
     hasMedia: message.hasMedia,
+    account: account?.identifier,
   });
 
   const contact = await message.getContact();
@@ -138,14 +147,26 @@ async function processIncomingMessage(message: Message): Promise<void> {
   // Resolve customer identity across channels
   const customerId = await resolveCustomer("whatsapp", customerContact, customerName);
 
-  // Find or create conversation
+  // Find or create conversation. Multi-account: prefer the same account's
+  // conversation so parallel numbers keep separate threads per account.
   let conversation = await prisma.conversation.findFirst({
     where: {
       channel: "whatsapp",
       status: { in: ["active", "escalated"] },
       OR: [{ customerId }, { customerContact }],
+      ...(account ? { channelAccountId: account.id } : {}),
     },
   });
+  if (!conversation && account) {
+    conversation = await prisma.conversation.findFirst({
+      where: {
+        channel: "whatsapp",
+        status: { in: ["active", "escalated"] },
+        channelAccountId: null,
+        OR: [{ customerId }, { customerContact }],
+      },
+    });
+  }
 
   if (!conversation) {
     conversation = await createNewConversation(
@@ -170,6 +191,18 @@ async function processIncomingMessage(message: Message): Promise<void> {
       conversationId: conversation.id,
       customerId,
     });
+  }
+
+  if (account && conversation.channelAccountId !== account.id) {
+    conversation = await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { channelAccountId: account.id },
+    });
+  }
+  if (account) {
+    prisma.channelAccount
+      .update({ where: { id: account.id }, data: { lastInboundAt: new Date() } })
+      .catch(() => {});
   }
 
   let messageContent = message.body;
@@ -253,6 +286,7 @@ async function processIncomingMessage(message: Message): Promise<void> {
       conversationId: conversation.id,
       customerId,
       agentId: conversation.agentId,
+      channelAccountId: conversation.channelAccountId,
       message: messageContent,
     });
 

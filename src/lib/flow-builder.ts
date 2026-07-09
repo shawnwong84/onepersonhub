@@ -61,6 +61,7 @@ export interface CanvasFlowNode {
     label?: string;
     nodeType?: "trigger" | "condition" | "action" | "approval" | "delay" | "llm" | "end";
     triggerEvent?: string;
+    channelAccountId?: string;
     conditionField?: string;
     conditionOperator?: string;
     conditionValue?: string;

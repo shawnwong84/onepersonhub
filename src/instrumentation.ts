@@ -8,5 +8,8 @@ export async function register() {
 
     const { startWorkflowWorker } = await import("@/lib/workflow-worker");
     startWorkflowWorker();
+
+    const { startWebsiteRecrawlWorker } = await import("@/lib/website-crawler");
+    startWebsiteRecrawlWorker();
   }
 }

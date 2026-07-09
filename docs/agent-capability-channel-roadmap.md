@@ -303,11 +303,11 @@ Agent/human support:
 - [x] Add `AgentWorkflow` model.
 - [x] Add `AgentTool` model.
 - [x] Add Prisma migration.
-- [ ] Add seed/demo agents.
+- [x] Add seed/demo agents (Customer Support Agent + Sales Agent in `prisma/seed.ts`).
 - [x] Add `/api/agents` CRUD.
 - [x] Add `/api/agents/[id]` CRUD.
 - [x] Add `/api/channel-accounts` CRUD.
-- [ ] Add validation schemas.
+- [x] Add validation schemas (`agentInputSchema`/`channelAccountInputSchema` in `validations.ts`; invalid enums rejected with 400).
 - [x] Add RBAC permissions for agent management.
 
 ### Phase 2: Agent UI
@@ -320,7 +320,7 @@ Agent/human support:
 - [x] Add prompt/personality editor.
 - [x] Add fallback and automation mode controls.
 - [x] Add approval rule controls.
-- [ ] Add escalation department selector.
+- [x] Add escalation department selector (Runtime policy card; persists `escalationDepartmentId`).
 
 ### Phase 3: Channel Account UI
 
@@ -330,15 +330,15 @@ Agent/human support:
 - [x] Add multiple WhatsApp account support UI (any number of accounts per channel; runtime is still single-client, see Phase 8).
 - [x] Add multiple email account support UI (same caveat as above).
 - [x] Add account health/status badges (status column: connected/disconnected/inactive).
-- [ ] Add reconnect/test actions per account (needs the Phase 8 per-account runtime).
+- [x] Add reconnect/test actions per account (`POST /api/channel-accounts/[id]/actions`: connect/reconnect/disconnect/status; WhatsApp accounts get a QR modal with status polling).
 
 ### Phase 4: Agent Assignment
 
 - [x] Add agent-to-channel-account assignment UI.
-- [ ] Add primary/priority assignment.
+- [x] Add primary/priority assignment (router orders by `isPrimary` then `priority`).
 - [x] Add agent-to-KB category assignment.
-- [ ] Add agent-to-document assignment.
-- [ ] Add agent-to-entry assignment.
+- [x] Add agent-to-document assignment (model + semantic-search filter support; assignment via API).
+- [x] Add agent-to-entry assignment (model + semantic-search filter support; assignment via API).
 - [x] Add agent-to-workflow assignment.
 - [x] Add agent-to-tool/skill assignment.
 
@@ -358,7 +358,7 @@ Agent/human support:
 - [x] Update semantic search to accept agent scope.
 - [x] Filter KB by assigned categories.
 - [x] Filter KB by assigned documents.
-- [ ] Filter KB by assigned entries.
+- [x] Filter KB by assigned entries (`AgentKnowledgeScope.entryId` consumed by semantic search).
 - [x] Add fallback behavior for no KB scope.
 - [x] Store citation metadata with agent info.
 
@@ -366,20 +366,22 @@ Agent/human support:
 
 - [x] Add flow assignment to agents.
 - [x] Filter workflow matching by selected agent (runtime limits candidate flows to the routed agent's assigned flows).
-- [ ] Filter workflow matching by channel account.
-- [ ] Add priority behavior for multiple matching workflows.
-- [x] Log skipped workflows with agent mismatch reason (skipped runs record why, including agent-scoped no-match).
+- [x] Filter workflow matching by channel account (trigger `channelAccountId` skips non-matching accounts; channels pass the conversation's account into the runtime).
+- [ ] Add priority behavior for multiple matching workflows (first-match by creation order today).
+- [x] Log skipped workflows with agent mismatch reason (skipped runs record why, including agent-scoped and account-scoped no-match).
 
 ### Phase 8: Multi-Account Channel Runtime
 
-- [ ] Refactor WhatsApp runtime from single client to client registry.
-- [ ] Store separate WhatsApp auth/session path per channel account.
-- [ ] Add connect/disconnect/reconnect per WhatsApp account.
-- [ ] Route inbound WhatsApp messages to the matching channel account.
-- [ ] Send outbound WhatsApp messages through the selected account.
-- [ ] Refactor email runtime for multiple IMAP/SMTP accounts.
-- [ ] Route inbound email to the matching channel account.
-- [ ] Send outbound email through the selected account.
+> Built structurally; needs a smoke test with real devices/inboxes (QR scans and live SMTP cannot be verified headlessly).
+
+- [x] WhatsApp client registry (`whatsapp-accounts.ts`): per-account clients alongside the default client.
+- [x] Separate WhatsApp auth/session per channel account (`LocalAuth` clientId `account-<id>`).
+- [x] Connect/disconnect/reconnect per WhatsApp account (actions API + QR modal in the accounts UI).
+- [x] Route inbound WhatsApp messages to the matching channel account (per-account handlers stamp `channelAccountId`, prefer same-account conversations, update `lastInboundAt`).
+- [x] Send outbound WhatsApp messages through the selected account (manual replies try the conversation's account client first, then fall back to the default client).
+- [x] Multi-account outbound email (`sendEmailViaAccount` uses `ChannelAccount.credentials` SMTP; workflow email replies route by the conversation's account).
+- [ ] Route inbound email to the matching channel account (per-account IMAP listeners; the default settings-based listener remains the single inbound).
+- [x] Send outbound email through the selected account.
 
 ### Phase 9: Conversation Experience
 
@@ -393,15 +395,15 @@ Agent/human support:
 
 ### Phase 10: Testing and Observability
 
-- [ ] Add agent test console.
-- [ ] Test agent with selected channel account.
-- [ ] Test agent with selected KB scope.
-- [ ] Test agent with selected workflow.
-- [ ] Add agent routing audit log.
-- [ ] Add per-agent analytics.
-- [ ] Add per-agent AI fallback rate.
-- [ ] Add per-agent workflow success rate.
-- [ ] Add per-agent handoff rate.
+- [x] Add agent test console (`POST /api/agents/[id]/test` + modal on the Agents page; dry-run, nothing persisted to conversations).
+- [x] Test agent with selected channel account (channel select in the console drives workflow matching).
+- [x] Test agent with selected KB scope (retrieval runs through the agent's scope; matched entries shown with scores).
+- [x] Test agent with selected workflow (console lists which assigned active workflows would consider the message).
+- [x] Add agent routing audit log (`agent.route_resolved` activity entries, throttled per route/hour).
+- [x] Add per-agent analytics (`GET /api/agents/analytics` + stats strip on the Agents page).
+- [x] Add per-agent AI fallback rate.
+- [x] Add per-agent workflow success rate.
+- [x] Add per-agent handoff rate.
 
 ## Recommended Build Order
 

@@ -420,6 +420,7 @@ async function processEmail(parsed: ParsedMail, config: EmailConfig) {
       conversationId: conversation.id,
       customerId,
       agentId: conversation.agentId,
+      channelAccountId: conversation.channelAccountId,
       message: messageContent,
     });
 
@@ -653,8 +654,16 @@ export async function stopEmailListener() {
 export async function sendEmail(
   to: string,
   subject: string,
-  body: string
+  body: string,
+  channelAccountId?: string | null
 ): Promise<boolean> {
+  // Multi-account: when the conversation belongs to a channel account with
+  // its own SMTP credentials, send through that inbox instead of the default.
+  if (channelAccountId) {
+    const sent = await sendEmailViaAccount(channelAccountId, to, subject, body);
+    if (sent) return true;
+  }
+
   const config = await getEmailConfig();
   if (!config) return false;
 
@@ -669,6 +678,62 @@ export async function sendEmail(
   });
 
   return true;
+}
+
+/**
+ * Send through a specific channel account's SMTP credentials
+ * (stored in ChannelAccount.credentials: smtpHost, smtpPort, smtpUser,
+ * smtpPass, smtpFrom). Returns false when the account has no usable config.
+ */
+export async function sendEmailViaAccount(
+  accountId: string,
+  to: string,
+  subject: string,
+  body: string
+): Promise<boolean> {
+  try {
+    const account = await prisma.channelAccount.findUnique({ where: { id: accountId } });
+    if (!account || account.channel !== "email" || !account.isActive) return false;
+
+    const credentials = (account.credentials || {}) as Record<string, unknown>;
+    const smtpHost = typeof credentials.smtpHost === "string" ? credentials.smtpHost : "";
+    const smtpUser = typeof credentials.smtpUser === "string" ? credentials.smtpUser : "";
+    const smtpPass = typeof credentials.smtpPass === "string" ? credentials.smtpPass : "";
+    if (!smtpHost || !smtpUser || !smtpPass) return false;
+
+    const smtpPort = Number(credentials.smtpPort) || 587;
+    const config: EmailConfig = {
+      imapHost: "",
+      imapPort: 993,
+      imapUser: smtpUser,
+      imapPass: smtpPass,
+      smtpHost,
+      smtpPort,
+      smtpUser,
+      smtpPass,
+      smtpFrom: typeof credentials.smtpFrom === "string" && credentials.smtpFrom
+        ? credentials.smtpFrom
+        : account.identifier,
+    };
+
+    const branding = await getEmailBranding();
+    const transporter = getSmtpTransporter(config);
+    await transporter.sendMail({
+      from: config.smtpFrom,
+      to,
+      subject,
+      text: body,
+      html: buildEmailHtml(body, branding),
+    });
+
+    prisma.channelAccount
+      .update({ where: { id: accountId }, data: { lastOutboundAt: new Date() } })
+      .catch(() => {});
+    return true;
+  } catch (error) {
+    logger.error("Failed to send email via channel account:", error);
+    return false;
+  }
 }
 
 function testImapConnection(config: EmailConfig): Promise<void> {

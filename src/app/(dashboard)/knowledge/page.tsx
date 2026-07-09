@@ -152,6 +152,7 @@ export default function KnowledgeBasePage() {
     extractedText: "",
   });
   const [savingDocument, setSavingDocument] = useState(false);
+  const [documentView, setDocumentView] = useState<"text" | "table">("text");
 
   // Category modal
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -468,6 +469,82 @@ export default function KnowledgeBasePage() {
     } finally {
       setSavingDocument(false);
     }
+  }
+
+  // CSV round-trip for the editable table view. Handles quoted cells.
+  function parseCsv(text: string): string[][] {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let cell = "";
+    let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (inQuotes) {
+        if (char === '"' && text[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else if (char === '"') {
+          inQuotes = false;
+        } else {
+          cell += char;
+        }
+      } else if (char === '"') {
+        inQuotes = true;
+      } else if (char === ",") {
+        row.push(cell);
+        cell = "";
+      } else if (char === "\n" || char === "\r") {
+        if (char === "\r" && text[i + 1] === "\n") i++;
+        row.push(cell);
+        cell = "";
+        rows.push(row);
+        row = [];
+      } else {
+        cell += char;
+      }
+    }
+    if (cell.length > 0 || row.length > 0) {
+      row.push(cell);
+      rows.push(row);
+    }
+    return rows.filter((r) => r.some((c) => c.trim() !== ""));
+  }
+
+  function serializeCsv(rows: string[][]): string {
+    return rows
+      .map((row) =>
+        row
+          .map((cell) => (/[",\n\r]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell))
+          .join(",")
+      )
+      .join("\n");
+  }
+
+  function isTabular(document: KnowledgeDocumentDetail | null): boolean {
+    if (!document) return false;
+    const name = (document.fileName || "").toLowerCase();
+    if (/(\.csv|\.xlsx|\.xls)$/.test(name)) return true;
+    return getPreviewRows(document.tableData).length > 0;
+  }
+
+  function updateTableCell(rowIndex: number, cellIndex: number, value: string) {
+    const rows = parseCsv(documentDraft.extractedText);
+    if (!rows[rowIndex]) return;
+    rows[rowIndex] = [...rows[rowIndex]];
+    rows[rowIndex][cellIndex] = value;
+    setDocumentDraft({ ...documentDraft, extractedText: serializeCsv(rows) });
+  }
+
+  function addTableRow() {
+    const rows = parseCsv(documentDraft.extractedText);
+    const width = rows[0]?.length || 1;
+    rows.push(Array.from({ length: width }, () => ""));
+    setDocumentDraft({ ...documentDraft, extractedText: serializeCsv(rows) });
+  }
+
+  function removeTableRow(rowIndex: number) {
+    const rows = parseCsv(documentDraft.extractedText).filter((_, index) => index !== rowIndex);
+    setDocumentDraft({ ...documentDraft, extractedText: serializeCsv(rows) });
   }
 
   function getPreviewRows(tableData: unknown): string[][] {
@@ -1257,7 +1334,72 @@ export default function KnowledgeBasePage() {
                   </div>
                 </div>
 
-                <div className="grid min-h-0 flex-1 grid-rows-[1fr_auto]">
+                <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto]">
+                  {isTabular(selectedDocument) && (
+                    <div className="flex items-center gap-1 border-b border-owly-border bg-owly-surface px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => setDocumentView("text")}
+                        className={`rounded-md px-2.5 py-1 text-xs font-semibold ${documentView === "text" ? "bg-owly-primary text-white" : "text-owly-text-light hover:bg-owly-bg"}`}
+                      >
+                        Text
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDocumentView("table")}
+                        className={`rounded-md px-2.5 py-1 text-xs font-semibold ${documentView === "table" ? "bg-owly-primary text-white" : "text-owly-text-light hover:bg-owly-bg"}`}
+                      >
+                        Table editor
+                      </button>
+                      {documentView === "table" && (
+                        <button
+                          type="button"
+                          onClick={addTableRow}
+                          className="ml-auto rounded-md border border-owly-border px-2.5 py-1 text-xs font-semibold text-owly-text hover:bg-owly-bg"
+                        >
+                          + Row
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {documentView === "table" && isTabular(selectedDocument) ? (
+                    <div className="min-h-0 overflow-auto bg-owly-bg p-4">
+                      <table className="w-full border-collapse text-xs">
+                        <tbody>
+                          {parseCsv(documentDraft.extractedText).map((row, rowIndex) => (
+                            <tr key={rowIndex}>
+                              {row.map((cell, cellIndex) => (
+                                <td key={cellIndex} className="border border-owly-border p-0">
+                                  <input
+                                    value={cell}
+                                    onChange={(event) =>
+                                      updateTableCell(rowIndex, cellIndex, event.target.value)
+                                    }
+                                    className={`w-full min-w-[90px] bg-transparent px-2 py-1 text-owly-text outline-none focus:bg-owly-primary-50 ${rowIndex === 0 ? "font-semibold" : ""}`}
+                                  />
+                                </td>
+                              ))}
+                              <td className="border-0 pl-1">
+                                {rowIndex > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeTableRow(rowIndex)}
+                                    className="rounded px-1 text-owly-text-light hover:text-red-600"
+                                    title="Remove row"
+                                  >
+                                    &times;
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <p className="mt-3 text-xs text-owly-text-light">
+                        Edits update the document text as CSV. Save and reindex to apply.
+                      </p>
+                    </div>
+                  ) : (
                   <textarea
                     value={documentDraft.extractedText}
                     onChange={(event) =>
@@ -1268,6 +1410,7 @@ export default function KnowledgeBasePage() {
                     }
                     className="min-h-0 w-full resize-none border-0 bg-owly-bg p-4 font-mono text-sm text-owly-text outline-none"
                   />
+                  )}
 
                   {getPreviewRows(selectedDocument.tableData).length > 0 && (
                     <div className="max-h-56 overflow-auto border-t border-owly-border bg-owly-surface p-4">
