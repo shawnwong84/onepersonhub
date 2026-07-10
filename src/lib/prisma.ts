@@ -89,7 +89,7 @@ function encryptJsonFieldWriteArgs(args: Record<string, unknown>, jsonField: str
   }
 }
 
-const connectionString = process.env.DATABASE_URL || "postgresql://n8forge:n8forge@localhost:5432/owly?schema=public";
+const connectionString = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/owly?schema=public";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: ReturnType<typeof createPrismaClient> | undefined;

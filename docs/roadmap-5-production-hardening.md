@@ -52,8 +52,11 @@ Roadmaps 1–4 delivered the features. This roadmap makes them safe to sell.
     - `@hono/node-server` (moderate, only reachable through `prisma`'s own bundled dev CLI/`prisma studio`, never in the shipped app) — the only fix path is downgrading `prisma` to 6.19.3, a major regression from the 7.x we depend on; deferred until Prisma ships a 7.x-compatible fix.
     - `postcss` <8.5.10 nested inside `next`'s own vendored build tooling (our top-level `postcss` is already 8.5.16, unaffected) — npm's suggested fix path (downgrade `next` to 9.3.3) is nonsensical; this is Next's own internal dependency choice, fixable only by a future Next release.
     - `imap`/`utf7`/`semver` (ReDoS in a nested `semver` used internally by the unmaintained `imap` package) — `imap` per-account listeners are not yet wired into any live code path per Phase 5; low real exposure today, revisit when that phase starts.
-- [ ] Secrets scan of the repo history before any public exposure.
-- [ ] Secrets scan of the repo history before any public exposure.
+- [x] Secrets scan of the repo history before any public exposure.
+  - No real `.env` file was ever committed (only `.env.example`); `.gitignore` covers `.env*`.
+  - Scanned full history (`git log --all -p`) for high-confidence provider key formats (AWS `AKIA...`, PEM private key blocks, OpenAI `sk-...`, Slack `xox...`, GitHub `ghp_...`, Google `AIza...`) — zero matches.
+  - Scanned for generic hardcoded `password`/`secret`/`token`/`apiKey` assignments — all 47 hits are `.env.example` placeholders (`"change-this-to-a-random-secret"`, `"sk-your-openai-api-key"`, etc.) or test fixtures (`"test-secret-key-for-testing-only"`); none are real.
+  - One real finding: `src/lib/prisma.ts` and `prisma/seed.ts` hardcoded a personal local-dev Postgres credential (`n8forge:n8forge@localhost`) as the `DATABASE_URL` fallback, committed since the schema was first added. Low severity — localhost-only, not a production secret, not reachable remotely — but still a real weak-default-credential-in-source smell. Fixed: fallback now matches the documented, non-personal default already used by `.env.example`/`docker-compose.yml` (`postgres:postgres@localhost`). The string still exists in old commits; rewriting history (force-push) was judged not worth the disruption for a localhost-only dev credential, but flagging here in case the repo goes public and someone wants to scrub it anyway.
 
 Acceptance criteria:
 
