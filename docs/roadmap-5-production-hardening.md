@@ -109,7 +109,10 @@ Acceptance criteria:
 - [ ] Error monitoring: optional Sentry (or compatible) wiring via env; capture API route errors, worker errors, and client errors.
 - [ ] Log hygiene: request IDs propagated into worker/agent logs; noisy logs demoted.
 - [ ] Backup/restore: documented `pg_dump` + MinIO mirror scripts and a tested restore procedure.
-- [ ] Migration discipline: `prisma migrate deploy` on boot (optional flag); resolve the current dev-database drift (`migrate resolve --applied` for the four hand-written migrations).
+- [x] Migration discipline: `prisma migrate deploy` on boot (optional flag); resolve the current dev-database drift (`migrate resolve --applied` for the four hand-written migrations).
+  - The `Dockerfile`'s `CMD` already runs `npx prisma migrate deploy && npm start` on boot (from earlier work) — no change needed there, but it would have failed against this dev database until the drift below was resolved.
+  - Root-caused the drift precisely: `20260708090000_add_team_member_login` was recorded in `_prisma_migrations` but never marked finished, and `20260708100000_add_module_assignments`, `20260708110000_add_reporter_chat`, `20260710120000_add_token_version` weren't recorded at all — all four had their schema changes applied via `prisma db push` at various points instead of a tracked migration. Verified via direct SQL that every column/table those four migrations would create already exists (`TeamMember.username`, `TeamMember.tokenVersion`, `Admin.tokenVersion`, `ModuleAssignment`, `ReporterChatThread`, `ReporterChatMessage`), so marking them applied doesn't paper over an actual schema gap.
+  - Ran `npx prisma migrate resolve --applied <name>` for each of the four. Verified: `npx prisma migrate status` now reports "Database schema is up to date!" and `npx prisma migrate deploy` reports "No pending migrations to apply" — both previously failed with `P3008`/`P3018` errors. Live-verified the app still logs in and functions normally against the same database afterward (this only touches migration bookkeeping, not the actual schema).
 - [ ] Update CI: typecheck + lint + tests + build gate; publish image on tags.
 
 ## Phase 4: Test Safety Net
