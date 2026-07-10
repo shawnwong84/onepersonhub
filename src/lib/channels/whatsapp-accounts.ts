@@ -156,6 +156,27 @@ export async function disconnectWhatsAppAccount(accountId: string): Promise<void
   });
 }
 
+/**
+ * Destroys every registered account client's underlying puppeteer session
+ * without the DB/activity-log side effects of disconnectWhatsAppAccount —
+ * used on process shutdown, where we want sessions closed cleanly (so
+ * puppeteer/chromium child processes don't linger and LocalAuth session
+ * files aren't left mid-write) but don't need to record a deliberate
+ * "disconnected" action for what's actually a server restart.
+ */
+export async function destroyAllWhatsAppAccountClients(): Promise<void> {
+  await Promise.allSettled(
+    Array.from(registry.entries()).map(async ([accountId, state]) => {
+      if (!state.client) return;
+      try {
+        await state.client.destroy();
+      } catch (error) {
+        logger.error(`[WhatsApp] Failed to destroy account client ${accountId} during shutdown:`, error);
+      }
+    })
+  );
+}
+
 /** Send through a specific account's client; false when it is not connected. */
 export async function sendWhatsAppAccountMessage(
   accountId: string,

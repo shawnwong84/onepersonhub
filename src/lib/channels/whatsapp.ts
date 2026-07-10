@@ -552,6 +552,26 @@ export async function disconnectWhatsApp(): Promise<void> {
   await updateWhatsAppChannel(false, "disconnected");
 }
 
+/**
+ * Destroys the default client's underlying puppeteer session without the DB
+ * write disconnectWhatsApp does — used on process shutdown (a restart, not a
+ * deliberate disconnect) so the session closes cleanly without lingering
+ * chromium child processes or a mid-write LocalAuth session file.
+ */
+export async function destroyDefaultWhatsAppClient(): Promise<void> {
+  const client = whatsappState.client;
+  whatsappState.client = null;
+  whatsappState.messageHandlerClient = null;
+
+  if (client) {
+    try {
+      await client.destroy();
+    } catch (error) {
+      logger.error("[WhatsApp] Failed to destroy client during shutdown:", error);
+    }
+  }
+}
+
 export async function sendWhatsAppMessage(
   to: string,
   message: string

@@ -267,14 +267,32 @@ export async function runDueWebsiteRecrawls(limit = 2) {
   return { checked: sources.length, due: due.length, recrawled };
 }
 
-const globalForRecrawl = globalThis as unknown as { websiteRecrawlTimer?: NodeJS.Timeout };
+const globalForRecrawl = globalThis as unknown as {
+  websiteRecrawlTimer?: NodeJS.Timeout;
+  websiteRecrawlInFlight?: Promise<void> | null;
+};
+
+async function recrawlTick() {
+  if (!(await acquireWorkerTickLock("website-recrawl", 9 * 60 * 1000))) return;
+  await runDueWebsiteRecrawls().catch((error) => logger.error("Website recrawl worker failed:", error));
+}
 
 /** Checks every 10 minutes for website sources due a scheduled recrawl. */
 export function startWebsiteRecrawlWorker() {
   if (globalForRecrawl.websiteRecrawlTimer) return;
-  globalForRecrawl.websiteRecrawlTimer = setInterval(async () => {
-    if (!(await acquireWorkerTickLock("website-recrawl", 9 * 60 * 1000))) return;
-    runDueWebsiteRecrawls().catch((error) => logger.error("Website recrawl worker failed:", error));
+  globalForRecrawl.websiteRecrawlTimer = setInterval(() => {
+    globalForRecrawl.websiteRecrawlInFlight = recrawlTick().finally(() => {
+      globalForRecrawl.websiteRecrawlInFlight = null;
+    });
   }, 10 * 60 * 1000);
   logger.info("Website recrawl worker started.");
+}
+
+/** Stops scheduling new ticks and awaits any tick already in progress. */
+export async function stopWebsiteRecrawlWorker(): Promise<void> {
+  if (globalForRecrawl.websiteRecrawlTimer) {
+    clearInterval(globalForRecrawl.websiteRecrawlTimer);
+    globalForRecrawl.websiteRecrawlTimer = undefined;
+  }
+  await globalForRecrawl.websiteRecrawlInFlight;
 }

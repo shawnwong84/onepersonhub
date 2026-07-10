@@ -216,14 +216,32 @@ export async function runReporterHeartbeat(force = false) {
   return { newSignals: newSignals.length, delivered };
 }
 
-const globalForHeartbeat = globalThis as unknown as { reporterHeartbeatTimer?: NodeJS.Timeout };
+const globalForHeartbeat = globalThis as unknown as {
+  reporterHeartbeatTimer?: NodeJS.Timeout;
+  reporterHeartbeatInFlight?: Promise<void> | null;
+};
+
+async function tick() {
+  if (!(await acquireWorkerTickLock("reporter-heartbeat", 50 * 1000))) return;
+  await runReporterHeartbeat().catch((error) => logger.error("Reporter heartbeat failed:", error));
+}
 
 /** Started once from instrumentation; checks every minute whether a beat is due. */
 export function startReporterHeartbeat() {
   if (globalForHeartbeat.reporterHeartbeatTimer) return;
-  globalForHeartbeat.reporterHeartbeatTimer = setInterval(async () => {
-    if (!(await acquireWorkerTickLock("reporter-heartbeat", 50 * 1000))) return;
-    runReporterHeartbeat().catch((error) => logger.error("Reporter heartbeat failed:", error));
+  globalForHeartbeat.reporterHeartbeatTimer = setInterval(() => {
+    globalForHeartbeat.reporterHeartbeatInFlight = tick().finally(() => {
+      globalForHeartbeat.reporterHeartbeatInFlight = null;
+    });
   }, 60 * 1000);
   logger.info("Reporter heartbeat scheduler started.");
+}
+
+/** Stops scheduling new ticks and awaits any tick already in progress. */
+export async function stopReporterHeartbeat(): Promise<void> {
+  if (globalForHeartbeat.reporterHeartbeatTimer) {
+    clearInterval(globalForHeartbeat.reporterHeartbeatTimer);
+    globalForHeartbeat.reporterHeartbeatTimer = undefined;
+  }
+  await globalForHeartbeat.reporterHeartbeatInFlight;
 }
