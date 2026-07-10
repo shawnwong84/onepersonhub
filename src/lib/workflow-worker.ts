@@ -1,15 +1,22 @@
 import { logger } from "@/lib/logger";
 import { processDueWorkflowJobs } from "@/lib/workflow-runtime";
+import { acquireWorkerTickLock } from "@/lib/worker-lock";
 
 const globalForWorker = globalThis as unknown as { workflowWorkerTimer?: NodeJS.Timeout };
 
 /**
  * Production flow execution worker: processes due workflow jobs (delays,
  * approval timeouts) every 30 seconds. Started once from instrumentation.
+ *
+ * Job claiming itself is already safe under multiple instances (an atomic
+ * `status: "pending"` compare-and-set in processDueWorkflowJobs), so this
+ * lock is purely to avoid redundant polling and duplicate approval-timeout
+ * side effects (notifications), not to prevent double-execution of jobs.
  */
 export function startWorkflowWorker() {
   if (globalForWorker.workflowWorkerTimer) return;
   globalForWorker.workflowWorkerTimer = setInterval(async () => {
+    if (!(await acquireWorkerTickLock("workflow-worker", 25 * 1000))) return;
     try {
       const result = await processDueWorkflowJobs(20);
       const processed = (result as { processed?: number })?.processed;

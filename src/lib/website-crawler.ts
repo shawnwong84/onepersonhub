@@ -6,6 +6,7 @@ import {
 } from "@/lib/knowledge-ingestion";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 import { assertSafeExternalUrl } from "@/lib/url-safety";
+import { acquireWorkerTickLock } from "@/lib/worker-lock";
 
 function stripHtml(html: string): string {
   return html
@@ -271,7 +272,8 @@ const globalForRecrawl = globalThis as unknown as { websiteRecrawlTimer?: NodeJS
 /** Checks every 10 minutes for website sources due a scheduled recrawl. */
 export function startWebsiteRecrawlWorker() {
   if (globalForRecrawl.websiteRecrawlTimer) return;
-  globalForRecrawl.websiteRecrawlTimer = setInterval(() => {
+  globalForRecrawl.websiteRecrawlTimer = setInterval(async () => {
+    if (!(await acquireWorkerTickLock("website-recrawl", 9 * 60 * 1000))) return;
     runDueWebsiteRecrawls().catch((error) => logger.error("Website recrawl worker failed:", error));
   }, 10 * 60 * 1000);
   logger.info("Website recrawl worker started.");

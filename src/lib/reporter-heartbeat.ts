@@ -6,6 +6,7 @@ import { createNotification } from "@/lib/notifications";
 import { sendEmail } from "@/lib/channels/email";
 import { findMarketplaceModule } from "@/lib/marketplace/catalog";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
+import { acquireWorkerTickLock } from "@/lib/worker-lock";
 
 interface HeartbeatConfig {
   heartbeatEnabled: boolean;
@@ -220,7 +221,8 @@ const globalForHeartbeat = globalThis as unknown as { reporterHeartbeatTimer?: N
 /** Started once from instrumentation; checks every minute whether a beat is due. */
 export function startReporterHeartbeat() {
   if (globalForHeartbeat.reporterHeartbeatTimer) return;
-  globalForHeartbeat.reporterHeartbeatTimer = setInterval(() => {
+  globalForHeartbeat.reporterHeartbeatTimer = setInterval(async () => {
+    if (!(await acquireWorkerTickLock("reporter-heartbeat", 50 * 1000))) return;
     runReporterHeartbeat().catch((error) => logger.error("Reporter heartbeat failed:", error));
   }, 60 * 1000);
   logger.info("Reporter heartbeat scheduler started.");
