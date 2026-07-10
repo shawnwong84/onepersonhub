@@ -169,10 +169,19 @@ export async function disconnectEmailAccount(accountId: string): Promise<void> {
     .catch(() => {});
 }
 
-/** Starts a listener for every active email channel account with IMAP configured. Called once at boot. */
+/**
+ * Starts a listener for every active email channel account with IMAP
+ * configured, except the "default" identifier — that one is a bookkeeping
+ * row synced from the primary connection's own Settings-backed config (see
+ * src/app/api/channels/email/route.ts) so account-based routing has a real
+ * row to match. Its actual IMAP connection is still owned by the separate
+ * startEmailListener()/stopEmailListener() mechanism, triggered by the
+ * Channels page's Primary card, not by this per-account registry — starting
+ * it here too would poll the same mailbox twice. Called once at boot.
+ */
 export async function startAllEmailAccountListeners(): Promise<void> {
   const accounts = await prisma.channelAccount.findMany({
-    where: { channel: "email", isActive: true },
+    where: { channel: "email", isActive: true, identifier: { not: "default" } },
     select: { id: true, name: true },
   });
 

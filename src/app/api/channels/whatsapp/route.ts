@@ -117,6 +117,26 @@ export async function PUT(request: Request) {
       },
     });
 
+    // Keep a "default" ChannelAccount row in sync with the primary
+    // connection so account-based routing (resolveAgentRoute's `identifier:
+    // "default"` fallback) has a real row to match — every connection is
+    // account-based, the primary one is just the account named "default".
+    await prisma.channelAccount.upsert({
+      where: { channel_identifier: { channel: "whatsapp", identifier: "default" } },
+      update: {
+        name: "Primary WhatsApp",
+        isActive: channel.isActive,
+        status: channel.status,
+      },
+      create: {
+        channel: "whatsapp",
+        identifier: "default",
+        name: "Primary WhatsApp",
+        isActive: channel.isActive,
+        status: channel.status,
+      },
+    });
+
     await logActivity({
       action: "channel.whatsapp_settings_updated",
       entity: ACTIVITY_ENTITIES.CHANNEL,

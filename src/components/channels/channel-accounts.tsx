@@ -76,7 +76,10 @@ export function ChannelAccountsSection() {
       ]);
       if (accountsRes.ok) {
         const body = await accountsRes.json();
-        setAccounts(body.data || []);
+        // The "default" identifier is a bookkeeping row synced from the
+        // Primary card above (so account-based routing has a real row to
+        // match) — it's not a separate account a user manages here.
+        setAccounts((body.data || []).filter((account: ChannelAccountData) => account.identifier !== "default"));
       }
       if (agentsRes.ok) {
         const body = await agentsRes.json();

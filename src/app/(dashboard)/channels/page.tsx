@@ -61,6 +61,14 @@ type AutomationFallback = "ai_reply" | "no_reply" | "human_takeover";
 // Helpers
 // ---------------------------------------------------------------------------
 
+function PrimaryBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full bg-owly-primary-50 px-2 py-0.5 text-xs font-semibold text-owly-primary">
+      Primary
+    </span>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
   const isConnected = status === "connected";
   return (
@@ -345,7 +353,10 @@ function WhatsAppCard({
               <MessageCircle className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-semibold text-owly-text">WhatsApp</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-owly-text">WhatsApp</h3>
+                <PrimaryBadge />
+              </div>
               <p className="text-xs text-owly-text-light mt-0.5">
                 Messaging via WhatsApp Web or API
               </p>
@@ -625,7 +636,10 @@ function EmailCard({
               <Mail className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-semibold text-owly-text">Email</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-owly-text">Email</h3>
+                <PrimaryBadge />
+              </div>
               <p className="text-xs text-owly-text-light mt-0.5">
                 Send and receive via SMTP / IMAP
               </p>
@@ -1090,10 +1104,11 @@ export default function ChannelsPage() {
         ) : (
           <>
             <div className="max-w-7xl mb-3">
-              <h2 className="font-semibold text-owly-text">Default channel connections</h2>
+              <h2 className="font-semibold text-owly-text">Primary connections</h2>
               <p className="text-sm text-owly-text-light">
-                The primary connection per channel. Inbound traffic arrives here; extra numbers and
-                inboxes are managed as channel accounts below.
+                Every WhatsApp number, inbox, or phone line is an account — these are each channel&apos;s
+                <span className="font-semibold"> primary</span> account, with full setup and connect
+                controls. Add more numbers or inboxes as additional accounts below.
               </p>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl">

@@ -37,6 +37,15 @@ export async function POST(
         { status: 400 }
       );
     }
+    if (account.identifier === "default") {
+      return NextResponse.json(
+        {
+          error:
+            "This is the primary connection's bookkeeping record. Connect or disconnect it from the Primary card on the Channels page instead.",
+        },
+        { status: 400 }
+      );
+    }
 
     const isEmail = account.channel === "email";
     const connectAccount = isEmail ? connectEmailAccount : connectWhatsAppAccount;

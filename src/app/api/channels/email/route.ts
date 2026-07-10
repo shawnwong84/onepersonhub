@@ -188,6 +188,28 @@ export async function PUT(request: Request) {
       await stopEmailListener();
     }
 
+    // Keep a "default" ChannelAccount row in sync with the primary
+    // connection so account-based routing (resolveAgentRoute's `identifier:
+    // "default"` fallback) has a real row to match — every connection is
+    // account-based, the primary one is just the account named "default".
+    await prisma.channelAccount.upsert({
+      where: { channel_identifier: { channel: "email", identifier: "default" } },
+      update: {
+        name: "Primary Email",
+        isActive: channel.isActive,
+        status: channel.status,
+        credentials: emailConfig,
+      },
+      create: {
+        channel: "email",
+        identifier: "default",
+        name: "Primary Email",
+        isActive: channel.isActive,
+        status: channel.status,
+        credentials: emailConfig,
+      },
+    });
+
     await logActivity({
       action: "channel.email_settings_updated",
       entity: ACTIVITY_ENTITIES.CHANNEL,
