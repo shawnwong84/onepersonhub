@@ -42,7 +42,17 @@ Roadmaps 1–4 delivered the features. This roadmap makes them safe to sell.
   - Gated to production because the dev server needs `'unsafe-eval'` for React/webpack HMR and HSTS has no business pinning a plain-http local server to HTTPS.
   - `script-src`/`style-src` use `'unsafe-inline'` rather than nonces: Next's own docs (`node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md`) confirm nonce-based CSP requires disabling static rendering app-wide (Next injects inline RSC-streaming `<script>` tags on every page) — a real tradeoff not worth it here, so we followed Next's documented "Without Nonces" fallback instead.
   - Verified: production build (`npm run build && NODE_ENV=production next start`), curl confirms both headers present; a full Playwright login + dashboard-load pass against the production server recorded zero CSP console violations.
-- [ ] `npm audit` triage; pin or patch anything with a known exploit path.
+- [x] `npm audit` triage; pin or patch anything with a known exploit path. Went from 26 → 9 findings:
+  - [x] `next` 16.2.2 → 16.2.10: fixes a batch of high-severity advisories including a **middleware/proxy bypass** — directly relevant since auth in this app is enforced in `middleware.ts`.
+  - [x] `nodemailer` 8.0.4 → ^9.0.3: fixes several SMTP/CRLF-injection and SSRF advisories (major bump, but our usage is plain `createTransport`/`sendMail`; verified working).
+  - [x] `esbuild` (transitive via `vite`/`tsx`, dev-only) pinned to ^0.28.1 via a package.json `overrides` entry: fixes a dev-server arbitrary-file-read-on-Windows advisory.
+  - Verified: `tsc --noEmit` clean, full test suite (360/360) still passes, `npm run build` succeeds, and a live Playwright pass (login + navigate dashboard pages) shows zero page errors on the bumped versions.
+  - Deliberately **not** fixed (accepted risk, documented rather than silently ignored):
+    - `xlsx` (prototype pollution + ReDoS, used to parse **uploaded** files in `knowledge-ingestion.ts`) — SheetJS never published a patched version to the npm registry past 0.18.5; the fix only exists on their own CDN, which this environment could not reach to verify a specific safe version/URL. **Needs a human to pull the current patched tarball from sheetjs.com/xlsx directly** (e.g. `npm install https://cdn.sheetjs.com/xlsx-<version>/xlsx-<version>.tgz`) rather than guess a version here.
+    - `@hono/node-server` (moderate, only reachable through `prisma`'s own bundled dev CLI/`prisma studio`, never in the shipped app) — the only fix path is downgrading `prisma` to 6.19.3, a major regression from the 7.x we depend on; deferred until Prisma ships a 7.x-compatible fix.
+    - `postcss` <8.5.10 nested inside `next`'s own vendored build tooling (our top-level `postcss` is already 8.5.16, unaffected) — npm's suggested fix path (downgrade `next` to 9.3.3) is nonsensical; this is Next's own internal dependency choice, fixable only by a future Next release.
+    - `imap`/`utf7`/`semver` (ReDoS in a nested `semver` used internally by the unmaintained `imap` package) — `imap` per-account listeners are not yet wired into any live code path per Phase 5; low real exposure today, revisit when that phase starts.
+- [ ] Secrets scan of the repo history before any public exposure.
 - [ ] Secrets scan of the repo history before any public exposure.
 
 Acceptance criteria:
