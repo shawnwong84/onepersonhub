@@ -48,7 +48,14 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Login failed. Please try again.");
+        // The auth mutation rate limiter (middleware.ts) returns a nested
+        // { error: { code, message } } shape on 429, distinct from this
+        // route's own flat { error: "..." } string on 401/400.
+        const message =
+          typeof data.error === "string"
+            ? data.error
+            : data.error?.message || "Login failed. Please try again.";
+        setError(message);
         setLoading(false);
         return;
       }

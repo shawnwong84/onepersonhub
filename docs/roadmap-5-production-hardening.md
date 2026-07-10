@@ -130,14 +130,21 @@ Acceptance criteria:
 
 ## Phase 4: Test Safety Net
 
-- [ ] Playwright end-to-end suite (headless, CI-runnable) covering the money paths:
-  - [ ] Login (owner + member) and member scoping (agent sees only assigned module/conversation).
-  - [ ] Conversation reply flow with source badges.
-  - [ ] Order lifecycle: create → approve → fulfill → customer confirmation.
-  - [ ] Reporter chatbot ask + refusal.
-  - [ ] Marketplace install/uninstall with core-module protection.
-- [ ] Seed a deterministic e2e fixture database.
-- [ ] Wire the e2e suite into CI (against the compose stack).
+- [x] Playwright end-to-end suite (headless, CI-runnable) covering the money paths:
+  - [x] Login (owner + member) and member scoping (agent sees only assigned module/conversation).
+  - [x] Conversation reply flow with source badges.
+  - [x] Order lifecycle: create → approve → fulfill → customer confirmation.
+  - [x] Reporter chatbot ask + refusal.
+  - [x] Marketplace install/uninstall with core-module protection.
+  - `@playwright/test` added; `playwright.config.ts` runs headless Chromium, auto-starts the dev server locally when `PLAYWRIGHT_BASE_URL` isn't set, and defers to an already-running app in CI.
+  - While writing these, found and fixed a real bug: the login and setup pages rendered `data.error` directly, but the auth-mutation rate limiter (`middleware.ts`) returns a *nested* `{ error: { code, message } }` shape on 429, distinct from these routes' own flat `{ error: "..." }` string on 401/400 — hitting the rate limit crashed the page with "Objects are not valid as a React child" instead of showing a friendly message. Both pages now normalize either shape before rendering.
+- [x] Seed a deterministic e2e fixture database.
+  - `tests/e2e/global-setup.ts` seeds fixtures by driving the app's own APIs as an authenticated admin (find-or-create a department, a scoped "e2e-agent" team member with write access to the `orders` module only, two conversations — one assigned to that agent, one not) rather than writing rows directly into Postgres. This exercises the same validated code paths the app itself uses and stays correct automatically as that logic evolves. Every creation step is find-or-create, so re-running the suite never accumulates duplicate fixtures.
+  - Global setup also logs in once as admin and once as the e2e agent and saves each session's `storageState` to disk; every spec except the two dedicated login tests reuses these instead of logging in again, keeping the suite's real `POST /api/auth` calls to a small, fixed number well clear of the 5-per-minute auth rate limit (login itself failing during test *setup* was the first symptom that surfaced the rate-limit/error-shape bug above).
+- [x] Wire the e2e suite into CI (against the compose stack).
+  - New `e2e` job in `.github/workflows/ci.yml`: fresh Postgres service container, install deps + Chromium, migrate, seed the baseline admin (`npm run db:seed`), build, start the app in the background, poll `/api/health` until ready, then run the suite. Uploads the Playwright HTML report as a build artifact on every run (including failures).
+  - Real bug caught while writing this: `NODE_ENV: production` was originally set at the job level, which makes `npm ci` skip **all** devDependencies (including `@playwright/test` itself) — verified via `NODE_ENV=production npm ci --dry-run` locally (120 packages instead of ~916). Fixed by scoping `NODE_ENV: production` to only the "Start app" step.
+  - Verified: full suite (10/10) passes reliably across repeated runs on this machine, and separately confirmed `prisma migrate deploy` applies all 24 migrations cleanly to a genuinely fresh, empty database (not just the already-resolved dev database) — the exact scenario CI's fresh Postgres service container represents.
 
 ## Phase 5: Runtime Completeness (carried over)
 

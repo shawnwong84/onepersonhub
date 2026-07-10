@@ -18,6 +18,17 @@ const TONE_OPTIONS = [
   { value: "technical", label: "Technical", desc: "Precise and detailed" },
 ];
 
+// API error responses come in two shapes: a flat string (most routes) or a
+// nested { code, message, requestId } object (middleware.ts's rate limiter).
+function errorMessage(data: unknown, fallback: string): string {
+  const error = (data as { error?: unknown } | null)?.error;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message: unknown }).message) || fallback;
+  }
+  return fallback;
+}
+
 const PROVIDER_OPTIONS = [
   { value: "openai", label: "OpenAI", models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"] },
   { value: "claude", label: "Claude (Anthropic)", models: ["claude-sonnet-4-20250514", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"] },
@@ -103,7 +114,7 @@ export default function SetupPage() {
         });
         const data = await res.json();
         if (!res.ok) {
-          setError(data.error || "Setup failed.");
+          setError(errorMessage(data, "Setup failed."));
           setLoading(false);
           return;
         }
@@ -123,7 +134,7 @@ export default function SetupPage() {
         });
         if (!res.ok) {
           const data = await res.json();
-          setError(data.error || "Failed to save business profile.");
+          setError(errorMessage(data, "Failed to save business profile."));
           setLoading(false);
           return;
         }
@@ -143,7 +154,7 @@ export default function SetupPage() {
         });
         if (!res.ok) {
           const data = await res.json();
-          setError(data.error || "Failed to save AI configuration.");
+          setError(errorMessage(data, "Failed to save AI configuration."));
           setLoading(false);
           return;
         }
