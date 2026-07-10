@@ -2,6 +2,8 @@
 
 import {
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
   Bell,
   Bot,
   Braces,
@@ -116,6 +118,7 @@ interface FlowData {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   isActive: boolean;
+  priority: number;
   triggerCount: number;
   runs?: WorkflowRunSummary[];
   createdAt: string;
@@ -722,6 +725,47 @@ export function FlowsPageClient({ initialFlowId }: { initialFlowId?: string }) {
     }
   }, []);
 
+  // Flows are always fetched priority-ascending, so adjacent list positions
+  // are adjacent priorities — moving a flow just swaps its priority value
+  // with its neighbor's. The swap plan is computed from `flows` up front and
+  // the fetch calls happen outside the setFlows updater — an updater with
+  // side effects gets invoked twice by React Strict Mode in development
+  // (by design, to catch exactly this), which would double-fire the PUTs.
+  const reorderFlow = useCallback(
+    (flowId: string, direction: "up" | "down") => {
+      const index = flows.findIndex((f) => f.id === flowId);
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (index < 0 || targetIndex < 0 || targetIndex >= flows.length) return;
+
+      const a = flows[index];
+      const b = flows[targetIndex];
+
+      setFlows((current) =>
+        current
+          .map((f) => {
+            if (f.id === a.id) return { ...f, priority: b.priority };
+            if (f.id === b.id) return { ...f, priority: a.priority };
+            return f;
+          })
+          .sort((x, y) => x.priority - y.priority)
+      );
+
+      Promise.all([
+        fetch(`/api/flows/${a.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ priority: b.priority }),
+        }),
+        fetch(`/api/flows/${b.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ priority: a.priority }),
+        }),
+      ]).catch(() => loadFlows());
+    },
+    [flows, loadFlows]
+  );
+
   const loadTemplates = useCallback(async () => {
     const res = await fetch("/api/flow-templates");
     if (!res.ok) return;
@@ -1037,6 +1081,8 @@ export function FlowsPageClient({ initialFlowId }: { initialFlowId?: string }) {
           templates={templates}
           installingTemplateId={installingTemplateId}
           onInstallTemplate={installTemplate}
+          onReorder={reorderFlow}
+          canReorder={statusFilter === "all" && !searchQuery.trim()}
         />
       ) : (
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -1132,25 +1178,50 @@ export function FlowsPageClient({ initialFlowId }: { initialFlowId?: string }) {
                   No saved workflows.
                 </div>
               ) : (
-                flows.map((flow) => (
-                  <button
+                flows.map((flow, index) => (
+                  <div
                     key={flow.id}
-                    onClick={() => selectFlow(flow)}
                     className={cn(
-                      "w-full rounded-lg border p-3 text-left text-sm",
+                      "flex w-full items-stretch gap-1 rounded-lg border p-1 text-sm",
                       selectedFlow?.id === flow.id
                         ? "border-owly-primary bg-owly-primary-50"
                         : "border-owly-border bg-owly-bg hover:border-owly-primary/50"
                     )}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-owly-text">{flow.name}</span>
-                      {flow.isActive && <CheckCircle2 className="h-4 w-4 text-owly-success" />}
+                    <button
+                      type="button"
+                      onClick={() => selectFlow(flow)}
+                      className="min-w-0 flex-1 rounded-md p-2 text-left"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-owly-text">{flow.name}</span>
+                        {flow.isActive && <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-owly-success" />}
+                      </div>
+                      <div className="mt-1 text-xs text-owly-text-light">
+                        {Array.isArray(flow.nodes) ? Math.max(flow.nodes.length - 1, 0) : 0} steps - priority {flow.priority}
+                      </div>
+                    </button>
+                    <div className="flex flex-col justify-center gap-0.5">
+                      <button
+                        type="button"
+                        title="Run before the previous workflow"
+                        disabled={index === 0}
+                        onClick={() => reorderFlow(flow.id, "up")}
+                        className="rounded p-1 text-owly-text-light hover:bg-owly-border/50 disabled:opacity-30"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Run after the next workflow"
+                        disabled={index === flows.length - 1}
+                        onClick={() => reorderFlow(flow.id, "down")}
+                        className="rounded p-1 text-owly-text-light hover:bg-owly-border/50 disabled:opacity-30"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    <div className="mt-1 text-xs text-owly-text-light">
-                      {Array.isArray(flow.nodes) ? Math.max(flow.nodes.length - 1, 0) : 0} steps
-                    </div>
-                  </button>
+                  </div>
                 ))
               )}
             </section>
@@ -1331,6 +1402,8 @@ function WorkflowListView({
   templates,
   installingTemplateId,
   onInstallTemplate,
+  onReorder,
+  canReorder,
 }: {
   flows: FlowData[];
   loading: boolean;
@@ -1343,6 +1416,8 @@ function WorkflowListView({
   templates: FlowTemplateData[];
   installingTemplateId: string | null;
   onInstallTemplate: (templateId: string) => void;
+  onReorder: (flowId: string, direction: "up" | "down") => void;
+  canReorder: boolean;
 }) {
   const activeCount = flows.filter((flow) => flow.isActive).length;
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -1486,7 +1561,8 @@ function WorkflowListView({
           </div>
         ) : (
           <div className="overflow-hidden border border-owly-border bg-owly-surface">
-            <div className="grid grid-cols-[minmax(240px,1.3fr)_200px_1fr_100px_180px_110px] border-b border-owly-border bg-owly-bg px-4 py-3 text-xs font-bold uppercase tracking-wide text-owly-text-light">
+            <div className="grid grid-cols-[56px_minmax(240px,1.3fr)_200px_1fr_100px_180px_110px] border-b border-owly-border bg-owly-bg px-4 py-3 text-xs font-bold uppercase tracking-wide text-owly-text-light">
+              <div title={canReorder ? "Run order" : "Clear search/filters to reorder"}>Order</div>
               <div>Name</div>
               <div>Trigger</div>
               <div>Filters</div>
@@ -1494,18 +1570,43 @@ function WorkflowListView({
               <div>Last run</div>
               <div>Status</div>
             </div>
-            {flows.map((flow) => {
+            {flows.map((flow, index) => {
               const trigger = getFlowTrigger(flow);
               const filterSummary = getFlowFilterSummary(flow);
               const steps = getFlowExecutionNodes(flow);
               const latestRun = flow.runs?.[0];
 
               return (
-                <button
+                <div
                   key={flow.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onOpen(flow)}
-                  className="grid w-full grid-cols-[minmax(240px,1.3fr)_200px_1fr_100px_180px_110px] items-center gap-4 border-b border-owly-border px-4 py-4 text-left last:border-b-0 hover:bg-owly-primary-50"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") onOpen(flow);
+                  }}
+                  className="grid w-full cursor-pointer grid-cols-[56px_minmax(240px,1.3fr)_200px_1fr_100px_180px_110px] items-center gap-4 border-b border-owly-border px-4 py-4 text-left last:border-b-0 hover:bg-owly-primary-50"
                 >
+                  <div className="flex flex-col gap-0.5" onClick={(event) => event.stopPropagation()}>
+                    <button
+                      type="button"
+                      title="Run before the previous workflow"
+                      disabled={!canReorder || index === 0}
+                      onClick={() => onReorder(flow.id, "up")}
+                      className="rounded p-0.5 text-owly-text-light hover:bg-owly-border/50 disabled:opacity-30"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Run after the next workflow"
+                      disabled={!canReorder || index === flows.length - 1}
+                      onClick={() => onReorder(flow.id, "down")}
+                      className="rounded p-0.5 text-owly-text-light hover:bg-owly-border/50 disabled:opacity-30"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-bold text-owly-text">{flow.name}</div>
                     <div className="mt-1 truncate text-xs text-owly-text-light">
@@ -1565,7 +1666,7 @@ function WorkflowListView({
                       {flow.isActive ? "Active" : "Draft"}
                     </span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

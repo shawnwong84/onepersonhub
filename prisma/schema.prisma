@@ -787,6 +787,11 @@ model Flow {
   nodes          Json            @default("[]")
   edges          Json            @default("[]")
   isActive       Boolean         @default(false)
+  // Lower runs first when several active flows match the same trigger
+  // (matches AgentWorkflow.priority's convention). New flows default to
+  // last-in-evaluation-order (see the create route), not 0, so they don't
+  // silently jump ahead of existing flows.
+  priority       Int             @default(0)
   triggerCount   Int             @default(0)
   runs           WorkflowRun[]
   agentWorkflows AgentWorkflow[]

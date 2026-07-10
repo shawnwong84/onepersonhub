@@ -149,7 +149,13 @@ Acceptance criteria:
 ## Phase 5: Runtime Completeness (carried over)
 
 - [ ] Per-account inbound IMAP listeners (registry mirroring the WhatsApp one; credentials already stored per account).
-- [ ] Workflow priority: explicit priority field on flows; deterministic ordering when several match; UI to reorder.
+- [x] Workflow priority: explicit priority field on flows; deterministic ordering when several match; UI to reorder.
+  - New `Flow.priority Int @default(0)` (lower runs first, matching `AgentWorkflow.priority`'s existing convention). Migration backfills existing rows with distinct sequential priorities based on current `createdAt` order — without this, every pre-existing flow would share the same default value and the swap-based reorder UI would be a no-op the first time it's used.
+  - `runChannelWorkflows` (`workflow-runtime.ts`) now orders candidate flows by `[priority asc, createdAt asc]` instead of `createdAt asc` alone, so which flow wins when several match the same trigger is explicit and adjustable rather than "whichever was created first." Also fixed a related pre-existing bug in the same function: the agent-scoped path computed `assignedFlowIds` in `AgentWorkflow.priority` order but then discarded that order (Prisma's `id: { in: [...] }` doesn't preserve input-array order) — now explicitly re-sorted to match.
+  - New flows default to the lowest priority (evaluated last) rather than 0, so creating a new flow never silently jumps ahead of existing ones.
+  - UI: up/down reorder arrows in both the primary "Workflow List" table and the flow builder's "Saved Workflows" quick-switcher; swapping updates both flows' priority via two `PUT` calls. Reordering is disabled in the table while a search/status filter is active (reordering a filtered subset by adjacent-swap wouldn't reflect the true global order).
+  - Real bug caught and fixed while implementing this: the first version of `reorderFlow` made its `fetch` calls *inside* the `setFlows` state-updater callback — React Strict Mode deliberately invokes state updaters twice in development specifically to catch side effects like this, which was firing each reorder's two `PUT` requests twice (four network calls per click). Fixed by computing the swap plan from the current `flows` array up front and moving the fetch calls outside the updater.
+  - Verified: 5 new unit tests (`tests/api/flows.test.ts`) for the priority-ordering query and default-priority-on-create logic. Live end-to-end against the running dev server with network-response logging: clicking an up arrow sends exactly two `PUT` requests (not four) and the database ends up with the two flows' priorities genuinely swapped.
 - [ ] Unify default channels into "primary" channel accounts so every connection is account-based (removes the default-vs-account split on the Channels page).
 
 ## Phase 6: Performance

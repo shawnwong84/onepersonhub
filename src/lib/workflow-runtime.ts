@@ -2455,13 +2455,25 @@ export async function runChannelWorkflows(
       ).map((item) => item.flowId)
     : [];
 
-  const flows = await prisma.flow.findMany({
+  const unsortedFlows = await prisma.flow.findMany({
     where: {
       isActive: true,
       ...(input.agentId ? { id: { in: assignedFlowIds } } : {}),
     },
-    orderBy: input.agentId ? { createdAt: "asc" } : { createdAt: "asc" },
+    // Flow.priority (ascending: lower runs first) is the deterministic tie
+    // breaker when several active flows match the same trigger; createdAt
+    // is the final tie breaker when priorities are equal.
+    orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
   });
+
+  // Prisma's `id: { in: [...] }` does not preserve the input array's order,
+  // so for agent-scoped runs, re-sort by the AgentWorkflow-specific priority
+  // order already computed above rather than discarding it.
+  const flows = input.agentId
+    ? [...unsortedFlows].sort(
+        (a, b) => assignedFlowIds.indexOf(a.id) - assignedFlowIds.indexOf(b.id)
+      )
+    : unsortedFlows;
 
   if (flows.length === 0) {
     return {

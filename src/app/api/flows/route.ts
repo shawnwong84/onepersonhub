@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const [flows, total] = await Promise.all([
       prisma.flow.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
         skip,
         take,
       }),
@@ -105,6 +105,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // New flows evaluate last by default (append to the end of the priority
+    // order) rather than defaulting to 0, so they don't silently jump ahead
+    // of existing flows that already match the same trigger.
+    const lowestPriorityFlow = await prisma.flow.findFirst({
+      orderBy: { priority: "desc" },
+      select: { priority: true },
+    });
+    const nextPriority = (lowestPriorityFlow?.priority ?? -1) + 1;
+
     const flow = await prisma.flow.create({
       data: {
         name: name.trim(),
@@ -113,6 +122,7 @@ export async function POST(request: NextRequest) {
         nodes: nodes || [],
         edges: edges || [],
         isActive: isActive ?? false,
+        priority: nextPriority,
       },
     });
 
