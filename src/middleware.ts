@@ -110,7 +110,7 @@ function getApiRateLimit(pathname: string, method: string) {
   };
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const requestId = request.headers.get("x-request-id") || generateRequestId();
 
@@ -147,7 +147,7 @@ export function middleware(request: NextRequest) {
   // dashboard read budget so normal page bootstrapping does not lock users out.
   if (pathname.startsWith("/api/auth") && request.method !== "GET") {
     const ip = getClientIp(request);
-    const rateResult = checkRateLimit(`auth:${ip}`, RATE_LIMITS.auth);
+    const rateResult = await checkRateLimit(`auth:${ip}`, RATE_LIMITS.auth);
 
     if (!rateResult.allowed) {
       const response = NextResponse.json(
@@ -174,7 +174,7 @@ export function middleware(request: NextRequest) {
   if (pathname.startsWith("/api/")) {
     const ip = getClientIp(request);
     const { keyPrefix, config } = getApiRateLimit(pathname, request.method);
-    const rateResult = checkRateLimit(`${keyPrefix}:${ip}`, config);
+    const rateResult = await checkRateLimit(`${keyPrefix}:${ip}`, config);
 
     if (!rateResult.allowed) {
       const response = NextResponse.json(

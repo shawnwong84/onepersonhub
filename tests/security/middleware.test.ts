@@ -34,7 +34,7 @@ describe("Middleware", () => {
     it("should allow /login without token", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/login");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).not.toBe(401);
       expect(response.headers.get("Location")).toBeNull();
@@ -43,7 +43,7 @@ describe("Middleware", () => {
     it("should allow /setup without token", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/setup");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).not.toBe(401);
     });
@@ -51,7 +51,7 @@ describe("Middleware", () => {
     it("should allow /api/auth without token", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/api/auth");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).not.toBe(401);
     });
@@ -59,7 +59,7 @@ describe("Middleware", () => {
     it("should allow /api/health without token", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/api/health");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).not.toBe(401);
     });
@@ -67,7 +67,7 @@ describe("Middleware", () => {
     it("should allow Twilio webhook paths without token", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/api/channels/phone/incoming");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).not.toBe(401);
     });
@@ -77,7 +77,7 @@ describe("Middleware", () => {
     it("should return 401 for API routes without token", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/api/conversations");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).toBe(401);
     });
@@ -85,7 +85,7 @@ describe("Middleware", () => {
     it("should redirect pages to /login without token", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/conversations");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).toBe(307);
       expect(response.headers.get("Location")).toContain("/login");
@@ -98,7 +98,7 @@ describe("Middleware", () => {
       const request = createMiddlewareRequest("/api/conversations", {
         cookies: { "owly-token": fakeToken },
       });
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).not.toBe(401);
     });
@@ -108,7 +108,7 @@ describe("Middleware", () => {
       const request = createMiddlewareRequest("/api/conversations", {
         cookies: { "owly-token": "not-a-jwt" },
       });
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).toBe(401);
     });
@@ -118,7 +118,7 @@ describe("Middleware", () => {
     it("should include X-Content-Type-Options header", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/api/health");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     });
@@ -126,7 +126,7 @@ describe("Middleware", () => {
     it("should include X-Frame-Options header", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/api/health");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.headers.get("X-Frame-Options")).toBe("DENY");
     });
@@ -134,7 +134,7 @@ describe("Middleware", () => {
     it("should include X-XSS-Protection header", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/api/health");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.headers.get("X-XSS-Protection")).toBe("1; mode=block");
     });
@@ -142,7 +142,7 @@ describe("Middleware", () => {
     it("should include Referrer-Policy header", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/api/health");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.headers.get("Referrer-Policy")).toBe(
         "strict-origin-when-cross-origin"
@@ -152,7 +152,7 @@ describe("Middleware", () => {
     it("should include Permissions-Policy header", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/api/health");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.headers.get("Permissions-Policy")).toContain("camera=()");
     });
@@ -167,7 +167,7 @@ describe("Middleware", () => {
           method: "POST",
           headers: { "x-forwarded-for": "1.2.3.4" },
         });
-        const response = middleware(request);
+        const response = await middleware(request);
         expect(response.status).not.toBe(429);
       }
     });
@@ -181,7 +181,7 @@ describe("Middleware", () => {
           method: "POST",
           headers: { "x-forwarded-for": "10.0.0.1" },
         });
-        middleware(request);
+        await middleware(request);
       }
 
       // 6th request should be blocked
@@ -189,7 +189,7 @@ describe("Middleware", () => {
         method: "POST",
         headers: { "x-forwarded-for": "10.0.0.1" },
       });
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).toBe(429);
       expect(response.headers.get("Retry-After")).toBeDefined();
@@ -204,7 +204,7 @@ describe("Middleware", () => {
           method: "POST",
           headers: { "x-forwarded-for": "192.168.1.1" },
         });
-        middleware(request);
+        await middleware(request);
       }
 
       // IP B should still be allowed
@@ -212,7 +212,7 @@ describe("Middleware", () => {
         method: "POST",
         headers: { "x-forwarded-for": "192.168.1.2" },
       });
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).not.toBe(429);
     });
@@ -225,7 +225,7 @@ describe("Middleware", () => {
         const request = createMiddlewareRequest("/api/auth", {
           headers: { "x-forwarded-for": "10.0.0.2" },
         });
-        const response = middleware(request);
+        const response = await middleware(request);
         expect(response.status).not.toBe(429);
       }
     });
@@ -235,7 +235,7 @@ describe("Middleware", () => {
     it("should pass through _next paths", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/_next/static/chunk.js");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).toBe(200);
     });
@@ -243,7 +243,7 @@ describe("Middleware", () => {
     it("should pass through .png files", async () => {
       const { middleware } = await import("@/middleware");
       const request = createMiddlewareRequest("/logo.png");
-      const response = middleware(request);
+      const response = await middleware(request);
 
       expect(response.status).toBe(200);
     });

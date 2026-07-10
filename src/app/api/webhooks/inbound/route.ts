@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rateResult = checkRateLimit(`webhook_inbound:${auth.userId}`, RATE_LIMITS.webhookInbound);
+    const rateResult = await checkRateLimit(`webhook_inbound:${auth.userId}`, RATE_LIMITS.webhookInbound);
     if (!rateResult.allowed) {
       const response = NextResponse.json(
         { error: "Too many requests. Please try again later." },
