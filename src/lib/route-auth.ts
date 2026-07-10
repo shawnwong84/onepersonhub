@@ -90,13 +90,22 @@ export async function requireAuth(
   if (payload.userType === "member") {
     const member = await prisma.teamMember.findUnique({
       where: { id: payload.userId },
-      select: { id: true, username: true, name: true, rbacRole: true, isActive: true },
+      select: { id: true, username: true, name: true, rbacRole: true, isActive: true, tokenVersion: true },
     });
 
     // Deactivation must invalidate existing sessions immediately.
     if (!member || !member.isActive || !member.username) {
       return NextResponse.json(
         { error: { code: "UNAUTHORIZED", message: "Account is not active" } },
+        { status: 401 }
+      );
+    }
+
+    // A password reset bumps tokenVersion, invalidating every session that
+    // was issued before it - even ones that haven't expired yet.
+    if (member.tokenVersion !== payload.tokenVersion) {
+      return NextResponse.json(
+        { error: { code: "SESSION_INVALIDATED", message: "Your session has been invalidated. Please log in again." } },
         { status: 401 }
       );
     }
@@ -128,12 +137,19 @@ export async function requireAuth(
 
   const admin = await prisma.admin.findUnique({
     where: { id: payload.userId },
-    select: { id: true, username: true, name: true, role: true },
+    select: { id: true, username: true, name: true, role: true, tokenVersion: true },
   });
 
   if (!admin) {
     return NextResponse.json(
       { error: { code: "UNAUTHORIZED", message: "User not found" } },
+      { status: 401 }
+    );
+  }
+
+  if (admin.tokenVersion !== payload.tokenVersion) {
+    return NextResponse.json(
+      { error: { code: "SESSION_INVALIDATED", message: "Your session has been invalidated. Please log in again." } },
       { status: 401 }
     );
   }

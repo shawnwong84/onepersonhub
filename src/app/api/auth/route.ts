@@ -10,6 +10,7 @@ import {
   isSetupComplete,
 } from "@/lib/auth";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
+import { isLockedOut, recordFailedLogin, clearLoginAttempts } from "@/lib/login-lockout";
 
 // POST /api/auth - Login or Setup
 export async function POST(request: NextRequest) {
@@ -77,6 +78,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const lockout = isLockedOut(username);
+    if (lockout.locked) {
+      const response = NextResponse.json(
+        { error: "Too many failed login attempts. Please try again later." },
+        { status: 429 }
+      );
+      response.headers.set("Retry-After", String(lockout.retryAfterSeconds));
+      return response;
+    }
+
     const admin = await prisma.admin.findUnique({
       where: { username },
       omit: { password: false },
@@ -84,13 +95,15 @@ export async function POST(request: NextRequest) {
     if (admin) {
       const valid = await verifyPassword(password, admin.password);
       if (!valid) {
+        recordFailedLogin(username);
         return NextResponse.json(
           { error: "Invalid credentials" },
           { status: 401 }
         );
       }
 
-      const token = generateToken(admin.id, admin.role, "owner");
+      clearLoginAttempts(username);
+      const token = generateToken(admin.id, admin.role, "owner", admin.tokenVersion);
       const response = NextResponse.json({
         success: true,
         user: { id: admin.id, username: admin.username, name: admin.name, role: admin.role, userType: "owner" },
@@ -105,6 +118,7 @@ export async function POST(request: NextRequest) {
       omit: { password: false },
     });
     if (!member || !member.password || !member.isActive) {
+      recordFailedLogin(username);
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
@@ -113,12 +127,14 @@ export async function POST(request: NextRequest) {
 
     const memberValid = await verifyPassword(password, member.password);
     if (!memberValid) {
+      recordFailedLogin(username);
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
       );
     }
 
+    clearLoginAttempts(username);
     await prisma.teamMember.update({
       where: { id: member.id },
       data: { lastLoginAt: new Date() },
@@ -132,7 +148,7 @@ export async function POST(request: NextRequest) {
       userName: member.name,
     });
 
-    const token = generateToken(member.id, member.rbacRole, "member");
+    const token = generateToken(member.id, member.rbacRole, "member", member.tokenVersion);
     const response = NextResponse.json({
       success: true,
       user: { id: member.id, username: member.username, name: member.name, role: member.rbacRole, userType: "member" },

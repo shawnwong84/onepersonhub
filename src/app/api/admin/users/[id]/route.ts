@@ -48,6 +48,8 @@ export async function PUT(
 
     if (password && typeof password === "string" && password.length >= 6) {
       updateData.password = await hashPassword(password);
+      // Invalidate every session issued before this password change.
+      updateData.tokenVersion = { increment: 1 };
     }
 
     const user = await prisma.admin.update({

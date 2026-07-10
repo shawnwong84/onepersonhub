@@ -52,13 +52,16 @@ model Settings {
 // ==================== AUTH ====================
 
 model Admin {
-  id        String   @id @default(uuid())
-  username  String   @unique
-  password  String
-  name      String   @default("Admin")
-  role      String   @default("admin")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  username     String   @unique
+  password     String
+  name         String   @default("Admin")
+  role         String   @default("admin")
+  // Bumped whenever the password changes; embedded in issued JWTs so a
+  // password change invalidates every previously issued session at once.
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // ==================== KNOWLEDGE BASE ====================
@@ -246,6 +249,9 @@ model TeamMember {
   rbacRole     String     @default("viewer")
   isActive     Boolean    @default(true)
   lastLoginAt  DateTime?
+  // Bumped whenever credentials are (re)issued; embedded in issued JWTs so
+  // a password reset invalidates every previously issued session at once.
+  tokenVersion Int        @default(0)
   tickets      Ticket[]
   moduleAssignments     ModuleAssignment[]
   assignedConversations Conversation[]

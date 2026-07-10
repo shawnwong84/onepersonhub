@@ -15,7 +15,16 @@ function getJwtSecret(): string {
 
 const JWT_SECRET = getJwtSecret();
 const TOKEN_NAME = "owly-token";
-const TOKEN_EXPIRY = "7d";
+
+function getSessionLifetimeDays(): number {
+  const parsed = Number(process.env.SESSION_LIFETIME_DAYS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 7;
+}
+
+const SESSION_LIFETIME_DAYS = getSessionLifetimeDays();
+// Seconds, not a "7d"-style string: jsonwebtoken types expiresIn strings as a
+// closed literal union, which a computed/env-driven value can't satisfy.
+const TOKEN_EXPIRY_SECONDS = SESSION_LIFETIME_DAYS * 24 * 60 * 60;
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -34,21 +43,23 @@ export interface TokenPayload {
   userId: string;
   role: string;
   userType: UserType;
+  tokenVersion: number;
 }
 
 export function generateToken(
   userId: string,
   role: string,
-  userType: UserType = "owner"
+  userType: UserType = "owner",
+  tokenVersion = 0
 ): string {
-  return jwt.sign({ userId, role, userType }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+  return jwt.sign({ userId, role, userType, tokenVersion }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY_SECONDS });
 }
 
 export function verifyToken(token: string): TokenPayload | null {
   try {
     const payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
-    // Tokens issued before member login existed carry no userType.
-    return { ...payload, userType: payload.userType || "owner" };
+    // Tokens issued before member login/tokenVersion existed carry neither field.
+    return { ...payload, userType: payload.userType || "owner", tokenVersion: payload.tokenVersion ?? 0 };
   } catch {
     return null;
   }
@@ -65,9 +76,11 @@ export async function getCurrentUser() {
   if (payload.userType === "member") {
     const member = await prisma.teamMember.findUnique({
       where: { id: payload.userId },
-      select: { id: true, username: true, name: true, rbacRole: true, isActive: true },
+      select: { id: true, username: true, name: true, rbacRole: true, isActive: true, tokenVersion: true },
     });
     if (!member || !member.isActive || !member.username) return null;
+    if (member.tokenVersion !== payload.tokenVersion) return null; // password changed since this session was issued
+
     return {
       id: member.id,
       username: member.username,
@@ -79,11 +92,18 @@ export async function getCurrentUser() {
 
   const admin = await prisma.admin.findUnique({
     where: { id: payload.userId },
-    select: { id: true, username: true, name: true, role: true },
+    select: { id: true, username: true, name: true, role: true, tokenVersion: true },
   });
   if (!admin) return null;
+  if (admin.tokenVersion !== payload.tokenVersion) return null; // password changed since this session was issued
 
-  return { ...admin, userType: "owner" as UserType };
+  return {
+    id: admin.id,
+    username: admin.username,
+    name: admin.name,
+    role: admin.role,
+    userType: "owner" as UserType,
+  };
 }
 
 export async function isSetupComplete(): Promise<boolean> {
@@ -98,7 +118,7 @@ export function setAuthCookie(token: string) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax" as const,
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    maxAge: 60 * 60 * 24 * SESSION_LIFETIME_DAYS,
     path: "/",
   };
 }

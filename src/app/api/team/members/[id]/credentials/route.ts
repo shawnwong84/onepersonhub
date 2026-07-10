@@ -63,7 +63,11 @@ export async function POST(
       where: { id },
       data: {
         ...(username !== undefined && { username: username.trim() }),
-        ...(password !== undefined && { password: await hashPassword(password) }),
+        ...(password !== undefined && {
+          password: await hashPassword(password),
+          // Invalidate every session issued before this reset.
+          tokenVersion: { increment: 1 },
+        }),
         ...(rbacRole !== undefined && { rbacRole }),
         ...(typeof isActive === "boolean" && { isActive }),
       },

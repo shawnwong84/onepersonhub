@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createRequest, parseJsonResponse } from "../helpers/request";
 import { fixtures } from "../helpers/fixtures";
+import { _getStoreForTesting as getLockoutStore } from "@/lib/login-lockout";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 
@@ -18,6 +19,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
 describe("POST /api/auth", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    getLockoutStore().clear();
   });
 
   describe("login action", () => {
@@ -74,6 +76,97 @@ describe("POST /api/auth", () => {
 
       const response = await POST(request);
       expect(response.status).toBe(401);
+    });
+
+    it("should lock out after 5 failed attempts for the same username", async () => {
+      const { hashPassword } = await import("@/lib/auth");
+      const hashedPassword = await hashPassword("correctpass");
+      mockPrisma.admin.findUnique.mockResolvedValue({
+        ...fixtures.admin,
+        password: hashedPassword,
+      });
+
+      const { POST } = await import("@/app/api/auth/route");
+      const attempt = () =>
+        POST(
+          createRequest("/api/auth", {
+            method: "POST",
+            body: { action: "login", username: "admin", password: "wrongpass" },
+          })
+        );
+
+      for (let i = 0; i < 5; i++) {
+        const response = await attempt();
+        expect(response.status).toBe(401);
+      }
+
+      // 6th attempt is locked out even though it never reaches password verification.
+      const locked = await attempt();
+      expect(locked.status).toBe(429);
+      expect(locked.headers.get("Retry-After")).toBeTruthy();
+    });
+
+    it("locking out one username does not affect another", async () => {
+      const { hashPassword } = await import("@/lib/auth");
+      const hashedPassword = await hashPassword("correctpass");
+      mockPrisma.admin.findUnique.mockResolvedValue({
+        ...fixtures.admin,
+        password: hashedPassword,
+      });
+
+      const { POST } = await import("@/app/api/auth/route");
+      for (let i = 0; i < 6; i++) {
+        await POST(
+          createRequest("/api/auth", {
+            method: "POST",
+            body: { action: "login", username: "admin", password: "wrongpass" },
+          })
+        );
+      }
+
+      const response = await POST(
+        createRequest("/api/auth", {
+          method: "POST",
+          body: { action: "login", username: "someone-else", password: "wrongpass" },
+        })
+      );
+      expect(response.status).toBe(401); // rejected on credentials, not locked out
+    });
+
+    it("a successful login clears prior failed attempts", async () => {
+      const { hashPassword } = await import("@/lib/auth");
+      const hashedPassword = await hashPassword("correctpass");
+      mockPrisma.admin.findUnique.mockResolvedValue({
+        ...fixtures.admin,
+        password: hashedPassword,
+      });
+
+      const { POST } = await import("@/app/api/auth/route");
+      for (let i = 0; i < 4; i++) {
+        await POST(
+          createRequest("/api/auth", {
+            method: "POST",
+            body: { action: "login", username: "admin", password: "wrongpass" },
+          })
+        );
+      }
+
+      const success = await POST(
+        createRequest("/api/auth", {
+          method: "POST",
+          body: { action: "login", username: "admin", password: "correctpass" },
+        })
+      );
+      expect(success.status).toBe(200);
+
+      // Attempts reset: a further wrong password is just a normal 401, not locked.
+      const afterSuccess = await POST(
+        createRequest("/api/auth", {
+          method: "POST",
+          body: { action: "login", username: "admin", password: "wrongpass" },
+        })
+      );
+      expect(afterSuccess.status).toBe(401);
     });
 
     it("should reject missing credentials", async () => {
