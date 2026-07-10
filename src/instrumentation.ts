@@ -20,5 +20,10 @@ export async function register() {
 
     const { startWebsiteRecrawlWorker } = await import("@/lib/website-crawler");
     startWebsiteRecrawlWorker();
+
+    const { startAllEmailAccountListeners } = await import("@/lib/channels/email-accounts");
+    startAllEmailAccountListeners().catch((error) =>
+      logger.error("Failed to start email account listeners:", error)
+    );
   }
 }

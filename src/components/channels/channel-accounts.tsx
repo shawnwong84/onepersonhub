@@ -128,7 +128,9 @@ export function ChannelAccountsSection() {
       body: JSON.stringify({ action }),
     });
     if (res.ok) {
-      if (action === "connect" || action === "reconnect") {
+      if ((action === "connect" || action === "reconnect") && account.channel === "whatsapp") {
+        // Only WhatsApp needs a QR code scanned; email just starts its IMAP
+        // listener in the background with no user interaction step.
         setQrState(await res.json());
         setQrAccount(account);
       } else {
@@ -307,13 +309,13 @@ export function ChannelAccountsSection() {
                   </td>
                   <td className="px-5 py-3 text-right">
                     <div className="inline-flex gap-1">
-                      {account.channel === "whatsapp" && account.isActive && (
+                      {(account.channel === "whatsapp" || account.channel === "email") && account.isActive && (
                         account.status === "connected" ? (
                           <button
                             type="button"
                             onClick={() => accountAction(account, "disconnect")}
                             className="rounded-lg p-1.5 text-green-600 hover:bg-green-50"
-                            title="Disconnect this WhatsApp account"
+                            title={`Disconnect this ${account.channel === "whatsapp" ? "WhatsApp" : "email"} account`}
                           >
                             <Wifi className="h-4 w-4" />
                           </button>
@@ -322,7 +324,11 @@ export function ChannelAccountsSection() {
                             type="button"
                             onClick={() => accountAction(account, "connect")}
                             className="rounded-lg p-1.5 text-owly-text-light hover:bg-owly-primary-50 hover:text-owly-primary"
-                            title="Connect this WhatsApp account (scan QR)"
+                            title={
+                              account.channel === "whatsapp"
+                                ? "Connect this WhatsApp account (scan QR)"
+                                : "Connect this email account (starts the IMAP listener)"
+                            }
                           >
                             <WifiOff className="h-4 w-4" />
                           </button>
@@ -491,7 +497,9 @@ export function ChannelAccountsSection() {
               {form.channel === "email" && (
                 <div className="space-y-3 rounded-lg border border-owly-border p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-owly-text-light">
-                    Inbox credentials (outgoing mail uses these; leave empty to send via the default SMTP)
+                    Inbox credentials (SMTP sends via this account; leave empty to send via the default
+                    SMTP. IMAP fields enable an inbound listener for this account&apos;s own mailbox -
+                    save, then use the connect action in the table to start it.)
                   </p>
                   <div className="grid grid-cols-[minmax(0,1fr)_90px] gap-2">
                     <label className="block text-sm">

@@ -39,10 +39,12 @@ export function registerShutdownHandlers(): void {
       import("@/lib/reporter-heartbeat"),
       import("@/lib/website-crawler"),
     ]);
-    const [{ destroyDefaultWhatsAppClient }, { destroyAllWhatsAppAccountClients }] = await Promise.all([
-      import("@/lib/channels/whatsapp"),
-      import("@/lib/channels/whatsapp-accounts"),
-    ]);
+    const [{ destroyDefaultWhatsAppClient }, { destroyAllWhatsAppAccountClients }, { destroyAllEmailAccountListeners }] =
+      await Promise.all([
+        import("@/lib/channels/whatsapp"),
+        import("@/lib/channels/whatsapp-accounts"),
+        import("@/lib/channels/email-accounts"),
+      ]);
 
     await Promise.all([
       withTimeout(stopWorkflowWorker(), "workflow worker drain"),
@@ -54,8 +56,9 @@ export function registerShutdownHandlers(): void {
     await Promise.all([
       withTimeout(destroyDefaultWhatsAppClient(), "default WhatsApp client shutdown"),
       withTimeout(destroyAllWhatsAppAccountClients(), "WhatsApp account clients shutdown"),
+      withTimeout(destroyAllEmailAccountListeners(), "email account IMAP shutdown"),
     ]);
-    logger.info("WhatsApp sessions closed.");
+    logger.info("WhatsApp sessions and email listeners closed.");
 
     // Close database connection pool
     try {

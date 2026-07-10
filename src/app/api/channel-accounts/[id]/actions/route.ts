@@ -7,9 +7,14 @@ import {
   disconnectWhatsAppAccount,
   getWhatsAppAccountStatus,
 } from "@/lib/channels/whatsapp-accounts";
+import {
+  connectEmailAccount,
+  disconnectEmailAccount,
+  getEmailAccountStatus,
+} from "@/lib/channels/email-accounts";
 
 // POST /api/channel-accounts/[id]/actions - connect/disconnect/status per account.
-// Currently implemented for WhatsApp accounts (each gets its own session).
+// Implemented for WhatsApp (own browser session) and email (own IMAP listener).
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -26,31 +31,36 @@ export async function POST(
     if (!account) {
       return NextResponse.json({ error: "Channel account not found" }, { status: 404 });
     }
-    if (account.channel !== "whatsapp") {
+    if (account.channel !== "whatsapp" && account.channel !== "email") {
       return NextResponse.json(
-        { error: `Per-account connect is only available for WhatsApp accounts (this is ${account.channel}).` },
+        { error: `Per-account connect is only available for WhatsApp and email accounts (this is ${account.channel}).` },
         { status: 400 }
       );
     }
 
+    const isEmail = account.channel === "email";
+    const connectAccount = isEmail ? connectEmailAccount : connectWhatsAppAccount;
+    const disconnectAccount = isEmail ? disconnectEmailAccount : disconnectWhatsAppAccount;
+    const getStatus = isEmail ? getEmailAccountStatus : getWhatsAppAccountStatus;
+
     if (action === "connect" || action === "reconnect") {
       if (action === "reconnect") {
-        await disconnectWhatsAppAccount(id);
+        await disconnectAccount(id);
       }
       // Fire and forget: initialization takes time; the UI polls status.
-      connectWhatsAppAccount(id).catch((error) =>
-        logger.error("WhatsApp account connect failed:", error)
+      connectAccount(id).catch((error) =>
+        logger.error(`${isEmail ? "Email" : "WhatsApp"} account connect failed:`, error)
       );
-      return NextResponse.json({ started: true, ...getWhatsAppAccountStatus(id) });
+      return NextResponse.json({ started: true, ...getStatus(id) });
     }
 
     if (action === "disconnect") {
-      await disconnectWhatsAppAccount(id);
-      return NextResponse.json(getWhatsAppAccountStatus(id));
+      await disconnectAccount(id);
+      return NextResponse.json(getStatus(id));
     }
 
     if (action === "status") {
-      return NextResponse.json(getWhatsAppAccountStatus(id));
+      return NextResponse.json(getStatus(id));
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

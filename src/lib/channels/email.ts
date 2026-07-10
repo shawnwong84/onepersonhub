@@ -14,7 +14,7 @@ import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 
 const EMAIL_REPLY_COOLDOWN_MS = 30 * 60 * 1000;
 
-interface EmailConfig {
+export interface EmailConfig {
   imapHost: string;
   imapPort: number;
   imapUser: string;
@@ -24,6 +24,12 @@ interface EmailConfig {
   smtpUser: string;
   smtpPass: string;
   smtpFrom: string;
+}
+
+export interface EmailAccountContext {
+  id: string;
+  identifier: string;
+  defaultAgentId?: string | null;
 }
 
 let imapConnection: Imap | null = null;
@@ -240,7 +246,11 @@ async function logIncomingEmailActivity(input: {
   });
 }
 
-async function processEmail(parsed: ParsedMail, config: EmailConfig) {
+export async function processEmail(
+  parsed: ParsedMail,
+  config: EmailConfig,
+  account?: EmailAccountContext
+) {
   const fromAddress = parsed.from?.value?.[0]?.address;
   const fromName =
     parsed.from?.value?.[0]?.name || fromAddress || "Unknown";
@@ -252,20 +262,32 @@ async function processEmail(parsed: ParsedMail, config: EmailConfig) {
   // Resolve customer identity across channels
   const customerId = await resolveCustomer("email", fromAddress, fromName);
 
-  // Find or create conversation
+  // Find or create conversation. Multi-account: prefer the same account's
+  // conversation so parallel inboxes keep separate threads per account.
   let conversation = await prisma.conversation.findFirst({
     where: {
       channel: "email",
       status: { in: ["active", "escalated"] },
-      OR: [
-        { customerId },
-        { customerContact: fromAddress },
-      ],
+      OR: [{ customerId }, { customerContact: fromAddress }],
+      ...(account ? { channelAccountId: account.id } : {}),
     },
     include: {
       agent: { select: { id: true, name: true, automationMode: true, metadata: true } },
     },
   });
+  if (!conversation && account) {
+    conversation = await prisma.conversation.findFirst({
+      where: {
+        channel: "email",
+        status: { in: ["active", "escalated"] },
+        channelAccountId: null,
+        OR: [{ customerId }, { customerContact: fromAddress }],
+      },
+      include: {
+        agent: { select: { id: true, name: true, automationMode: true, metadata: true } },
+      },
+    });
+  }
 
   if (!conversation) {
     const created = await createNewConversation(
@@ -292,11 +314,33 @@ async function processEmail(parsed: ParsedMail, config: EmailConfig) {
         customerContact: fromAddress,
       },
     });
-  } else if (!conversation.agentId || getAssignedAgentChannel(conversation.agent) !== "email") {
-    const route = await resolveAgentRoute({
-      channel: "email",
-      channelAccountIdentifier: fromAddress,
+  }
+
+  if (account && conversation && conversation.channelAccountId !== account.id) {
+    conversation = await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { channelAccountId: account.id },
+      include: {
+        agent: { select: { id: true, name: true, automationMode: true, metadata: true } },
+      },
     });
+  }
+  if (account) {
+    prisma.channelAccount
+      .update({ where: { id: account.id }, data: { lastInboundAt: new Date() } })
+      .catch(() => {});
+  }
+
+  if (conversation && (!conversation.agentId || getAssignedAgentChannel(conversation.agent) !== "email")) {
+    // A known receiving account already tells us which mailbox/agent this
+    // is for; only fall back to the sender-address heuristic when we don't
+    // have that context (the single default-inbox listener).
+    const route = account?.defaultAgentId
+      ? { agentId: account.defaultAgentId, channelAccountId: account.id, agent: null as { name: string; automationMode: string } | null }
+      : await resolveAgentRoute({
+          channel: "email",
+          channelAccountIdentifier: fromAddress,
+        });
 
     if (route.agentId) {
       conversation = await prisma.conversation.update({
@@ -537,10 +581,10 @@ function buildEmailHtml(text: string, branding?: EmailBranding): string {
 </html>`;
 }
 
-function processUnreadEmails(
+export function processUnreadEmails(
   imap: Imap,
   config: EmailConfig,
-  options: { since?: Date } = {}
+  options: { since?: Date; account?: EmailAccountContext } = {}
 ) {
   const criteria: (string | string[])[] = ["UNSEEN"];
   if (options.since) {
@@ -559,7 +603,7 @@ function processUnreadEmails(
             logger.error("[Email] Parse error:", parseErr);
             return;
           }
-          processEmail(parsed, config).catch((error) =>
+          processEmail(parsed, config, options.account).catch((error) =>
             logger.error("[Email] Failed to process email:", error)
           );
         });
