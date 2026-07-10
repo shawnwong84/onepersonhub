@@ -518,7 +518,10 @@ export async function ingestKnowledgeDocument(documentId: string) {
   }
 }
 
-async function ensureImportedCategory(tx: Prisma.TransactionClient): Promise<string> {
+// Typed off `prisma` itself (not Prisma.TransactionClient) because the
+// secrets-encryption extension on the default client changes the exact
+// transaction client type; this function only touches `category`.
+async function ensureImportedCategory(tx: Pick<typeof prisma, "category">): Promise<string> {
   const existing = await tx.category.findFirst({ where: { name: "Imported Documents" } });
   if (existing) return existing.id;
 

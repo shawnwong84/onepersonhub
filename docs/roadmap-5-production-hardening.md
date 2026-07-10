@@ -12,7 +12,7 @@ Roadmaps 1–4 delivered the features. This roadmap makes them safe to sell.
 - CI (`ci.yml`) and a Docker publish workflow exist; a `Dockerfile` exists (currency unverified against the new workers/instrumentation).
 - `/api/health` exists.
 - Rate limiting is an in-memory `Map` (`src/lib/rate-limit.ts`) — resets on restart, incorrect across multiple instances despite Redis being available in compose.
-- Channel credentials (`ChannelAccount.credentials`), the AI API key (`Settings.aiApiKey`), and SMTP/Twilio secrets are stored **unencrypted** in Postgres.
+- ~~Channel credentials (`ChannelAccount.credentials`), the AI API key (`Settings.aiApiKey`), and SMTP/Twilio secrets are stored **unencrypted** in Postgres.~~ **Resolved** — see Phase 1.
 - Three in-process workers (workflow jobs, reporter heartbeat, website recrawl) start via `instrumentation.ts` — correct for one instance, duplicated beats/jobs if horizontally scaled.
 - No error monitoring; logs are console-structured only.
 - Open runtime items from roadmap audits: per-account inbound IMAP listeners; priority ordering when multiple workflows match.
@@ -20,8 +20,12 @@ Roadmaps 1–4 delivered the features. This roadmap makes them safe to sell.
 ## Phase 1: Security
 
 - [ ] Run a full security review of the branch (`/security-review`) and fix every actionable finding.
-- [ ] Encrypt secrets at rest: application-level AES-256-GCM (key from `SECRETS_ENCRYPTION_KEY` env) wrapping `ChannelAccount.credentials`, `Settings.aiApiKey`, SMTP/Twilio/ElevenLabs values, and API key hashes review.
-  - [ ] Transparent encrypt/decrypt helpers; migration to re-encrypt existing rows; key-rotation procedure documented.
+- [x] Encrypt secrets at rest: application-level AES-256-GCM (key from `SECRETS_ENCRYPTION_KEY` env) wrapping `Settings` secret fields, `ChannelAccount.credentials`, and `Channel.config` (a third secret-bearing location found during implementation — the default WhatsApp/Email/Phone connection cards duplicate credentials here).
+  - [x] Transparent encrypt/decrypt via a Prisma Client Extension (`src/lib/prisma.ts` + `src/lib/crypto.ts`) — every existing call site (`prisma.settings.*`, `prisma.channelAccount.*`, `prisma.channel.*`) keeps working unchanged; encryption/decryption is invisible to callers.
+  - [x] Migration script (`scripts/reencrypt-secrets.ts`) to re-encrypt legacy plaintext rows; idempotent, safe to re-run.
+  - [ ] Key-rotation procedure documented (decrypt-with-old/re-encrypt-with-new script; not yet written).
+  - [ ] API key hash review: `ApiKey.key` is still looked up by plaintext equality (bearer-token pattern). Switching to a hash-and-compare scheme is a larger, user-visible change (existing keys would need reissuing) — deliberately deferred as its own reviewed step rather than bundled here.
+  - Verified end-to-end: raw SQL confirms `enc:v1:`-prefixed ciphertext at rest in all three locations; the app decrypts back to the exact original value through normal API calls; 11 new unit tests for the crypto module (round-trip, random IV per encryption, legacy-plaintext passthrough, fail-closed on tamper/wrong key, prod-without-key throws, hex/base64 key formats).
 - [ ] Inbound webhook hardening: per-key rate limit, optional HMAC signature verification, payload size limits (length check exists).
 - [ ] Auth hardening: login attempt lockout/backoff (rate limit exists — add lockout), logout-all-sessions on password change (JWT version claim), configurable session lifetime.
 - [ ] Security headers audit (CSP, HSTS behind TLS, X-Frame-Options) in middleware/proxy.
@@ -30,7 +34,7 @@ Roadmaps 1–4 delivered the features. This roadmap makes them safe to sell.
 
 Acceptance criteria:
 
-- [ ] A database dump alone does not yield usable channel or AI credentials.
+- [x] A database dump alone does not yield usable channel or AI credentials (verified by direct SQL query against the running dev database).
 - [ ] Security review reports no high-severity findings.
 
 ## Phase 2: Reliability and Multi-Instance Correctness
