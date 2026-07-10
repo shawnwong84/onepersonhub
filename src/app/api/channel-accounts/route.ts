@@ -59,7 +59,19 @@ export async function GET(request: NextRequest) {
       prisma.channelAccount.count({ where }),
     ]);
 
-    return NextResponse.json(paginatedResponse(accounts, total, page, limit));
+    // Only admin can create/update channel accounts, so only admin needs
+    // decrypted credentials back (for the edit-form prefill); other roles
+    // that merely have channel-accounts:read must not receive secrets.
+    const sanitized =
+      auth.role === "admin"
+        ? accounts
+        : accounts.map((account) => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { credentials, ...rest } = account;
+            return rest;
+          });
+
+    return NextResponse.json(paginatedResponse(sanitized, total, page, limit));
   } catch (error) {
     logger.error("Failed to fetch channel accounts:", error);
     return NextResponse.json(

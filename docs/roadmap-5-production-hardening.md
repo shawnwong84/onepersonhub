@@ -19,7 +19,13 @@ Roadmaps 1–4 delivered the features. This roadmap makes them safe to sell.
 
 ## Phase 1: Security
 
-- [ ] Run a full security review of the branch (`/security-review`) and fix every actionable finding.
+- [x] Run a full security review of the branch (`/security-review`) and fix every actionable finding.
+  - Ran a multi-agent review (one pass to find candidates, one independent verification agent per candidate) against the full branch diff vs `origin/main`. 5 findings confirmed with 8-9/10 confidence, all fixed:
+    - [x] IDOR: `PUT /api/conversations/[id]` and `PUT /api/tickets/[id]` checked only the coarse role permission (`agent`/`supervisor`/`admin`), not per-record assignment — unlike their GET siblings. A scoped `agent` could update/close/reassign any conversation or ticket outside their assignment. Fixed by applying the same `isUnscoped(auth)`/`assignedToId` check PUT's GET counterpart already had.
+    - [x] Broken access control: `GET /api/channel-accounts` and `GET /api/channel-accounts/[id]` returned the full row — including the now-decrypted `credentials` JSON — to any role with `channel-accounts:read` (`viewer`, `agent`, `supervisor`, `admin`), even though only `admin` can create/update accounts. Fixed by stripping `credentials` from the response for non-admin roles.
+    - [x] SSRF: `src/lib/website-crawler.ts`'s plain-fetch fallback (used when `FIRECRAWL_API_KEY` is unset) fetched a caller-supplied URL with no host restriction, reachable via `POST /api/knowledge/websites` (supervisor+); a malicious URL could target cloud metadata endpoints or internal services, with the response persisted into a readable RAG knowledge document. Fixed with a new `src/lib/url-safety.ts` guard that resolves the hostname and rejects loopback/RFC1918/link-local/IPv6-ULA targets, and stopped following redirects blindly (re-validated instead).
+    - [x] SSRF: `src/lib/workflow-runtime.ts`'s `call_api` and `call_mcp_tool` workflow steps fetched an author-controlled URL with no validation (`call_mcp_tool`'s only "check" was that the string starts with `http`); reachable by `supervisor`+, with response bodies persisted into run logs readable by any role with `automation:read` (viewer+). Fixed with the same `url-safety.ts` guard applied before both fetches.
+  - Verified: `tsc --noEmit` clean, full test suite (378/378, up from 360 — added 18 new regression tests: `tests/api/conversations-id.test.ts`, `tests/api/tickets-id.test.ts`, `tests/api/channel-accounts.test.ts`, `tests/unit/url-safety.test.ts`). Live end-to-end against the running dev server: an unassigned agent gets 403 on both PUT endpoints; a viewer receives no `credentials` field from either channel-account route while admin still does; four internal-network URLs (cloud metadata, localhost, loopback, RFC1918) are all rejected by the website-crawler fetch while a real external URL still crawls and ingests successfully.
 - [x] Encrypt secrets at rest: application-level AES-256-GCM (key from `SECRETS_ENCRYPTION_KEY` env) wrapping `Settings` secret fields, `ChannelAccount.credentials`, and `Channel.config` (a third secret-bearing location found during implementation — the default WhatsApp/Email/Phone connection cards duplicate credentials here).
   - [x] Transparent encrypt/decrypt via a Prisma Client Extension (`src/lib/prisma.ts` + `src/lib/crypto.ts`) — every existing call site (`prisma.settings.*`, `prisma.channelAccount.*`, `prisma.channel.*`) keeps working unchanged; encryption/decryption is invisible to callers.
   - [x] Migration script (`scripts/reencrypt-secrets.ts`) to re-encrypt legacy plaintext rows; idempotent, safe to re-run.
@@ -61,7 +67,7 @@ Roadmaps 1–4 delivered the features. This roadmap makes them safe to sell.
 Acceptance criteria:
 
 - [x] A database dump alone does not yield usable channel or AI credentials (verified by direct SQL query against the running dev database).
-- [ ] Security review reports no high-severity findings.
+- [x] Security review reports no high-severity findings. (5 found, all fixed — see the security-review item above.)
 
 ## Phase 2: Reliability and Multi-Instance Correctness
 

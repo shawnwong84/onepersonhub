@@ -59,6 +59,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
       );
     }
 
+    // Only admin can create/update channel accounts, so only admin needs
+    // decrypted credentials back (for the edit-form prefill); other roles
+    // that merely have channel-accounts:read must not receive secrets.
+    if (auth.role !== "admin") {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { credentials, ...rest } = account;
+      return NextResponse.json(rest);
+    }
+
     return NextResponse.json(account);
   } catch (error) {
     logger.error("Failed to fetch channel account:", error);

@@ -91,6 +91,13 @@ export async function PUT(
       );
     }
 
+    if (!isUnscoped(auth) && existing.assignedToId !== auth.userId) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "This ticket is not assigned to you." } },
+        { status: 403 }
+      );
+    }
+
     const ticket = await prisma.ticket.update({
       where: { id },
       data: {

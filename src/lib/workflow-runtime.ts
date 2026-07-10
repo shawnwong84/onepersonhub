@@ -13,6 +13,7 @@ import {
   startWorkflowRun,
 } from "@/lib/workflow-run-logger";
 import type { CanvasFlowEdge, CanvasFlowNode } from "@/lib/flow-builder";
+import { assertSafeExternalUrl } from "@/lib/url-safety";
 
 interface WorkflowRuntimeInput {
   channel: string;
@@ -1881,6 +1882,7 @@ async function executeAction(
     let request: ReturnType<typeof buildWorkflowApiRequest> | null = null;
     try {
       request = buildWorkflowApiRequest(data, input, flowName, state);
+      await assertSafeExternalUrl(request.url);
       const response = await fetch(request.url, {
         method: request.method,
         headers: request.headers,
@@ -1981,6 +1983,8 @@ async function executeAction(
     }
 
     try {
+      await assertSafeExternalUrl(serverUrl);
+
       let args: Record<string, unknown> = {};
       const renderedInput = renderWorkflowTemplate(data.mcpInput || "{}", input, flowName, state);
       try {

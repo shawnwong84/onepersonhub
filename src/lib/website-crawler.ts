@@ -5,6 +5,7 @@ import {
   ingestKnowledgeDocument,
 } from "@/lib/knowledge-ingestion";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
+import { assertSafeExternalUrl } from "@/lib/url-safety";
 
 function stripHtml(html: string): string {
   return html
@@ -55,11 +56,16 @@ export async function scrapeWebsite(url: string): Promise<{
     };
   }
 
+  await assertSafeExternalUrl(url);
   const response = await fetch(url, {
     headers: {
       "User-Agent": "Cosstigo Knowledge Ingestion/1.0",
     },
+    redirect: "manual", // re-validate any redirect target ourselves instead of following blindly
   });
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error("Redirects are not followed for security reasons; use the direct URL.");
+  }
   if (!response.ok) {
     throw new Error(`Website fetch failed with ${response.status}`);
   }
