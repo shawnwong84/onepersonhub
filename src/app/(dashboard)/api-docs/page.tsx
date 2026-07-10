@@ -436,12 +436,20 @@ const apiSections: ApiSection[] = [
       {
         method: "GET",
         path: "/api/health",
-        description: "Check the API health status. Returns uptime and database connectivity status.",
+        description: "Liveness check: is the process itself running? Does not check any downstream dependency.",
         responseExample: {
           status: "ok",
-          uptime: 86400,
-          database: "connected",
-          timestamp: "2026-04-01T10:00:00Z",
+          uptime: "1h 2m 3s",
+          memory: { rss: "150MB", heap: "80/120MB" },
+        },
+      },
+      {
+        method: "GET",
+        path: "/api/health/ready",
+        description: "Readiness check: can this instance serve traffic right now? Checks Postgres, and Redis/MinIO when configured. Returns 503 when not ready.",
+        responseExample: {
+          status: "ready",
+          services: { database: "connected", redis: "connected", objectStorage: "connected" },
         },
       },
     ],

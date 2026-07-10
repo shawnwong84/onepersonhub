@@ -3,8 +3,13 @@ FROM node:22-slim AS builder
 
 WORKDIR /app
 
+# Skip puppeteer's bundled Chromium download during install: the runner
+# stage uses the system chromium package instead, so this download is pure
+# wasted bandwidth/build time in the builder stage.
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 
