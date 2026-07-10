@@ -433,6 +433,7 @@ function WhatsAppCard({
               <div className="rounded-lg border border-owly-border bg-owly-bg p-6 flex flex-col items-center">
                 <div className="w-48 h-48 bg-white border-2 border-dashed border-owly-border rounded-lg flex items-center justify-center mb-3 overflow-hidden">
                   {qrCode ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- dynamically generated data-URI QR code, not a static asset next/image can usefully optimize
                     <img
                       src={qrCode}
                       alt="WhatsApp QR Code"
