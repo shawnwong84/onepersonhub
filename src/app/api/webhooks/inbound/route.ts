@@ -1,18 +1,106 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { runChannelWorkflows } from "@/lib/workflow-runtime";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
+// Generous cap for a JSON trigger payload; blocks memory-pressure abuse
+// from a caller sending an oversized body before we even parse it.
+const MAX_BODY_BYTES = 64 * 1024;
+
+/**
+ * Verifies the optional X-Signature-256 header (format: "sha256=<hex>"),
+ * computed by the caller as HMAC-SHA256(rawBody, apiKey). Using the API key
+ * itself as the HMAC secret means a proxy/log that captures the header
+ * value alone still cannot forge a *different* body without the raw key.
+ *
+ * Returns null when verification is not applicable (cookie-auth callers -
+ * their session already proves identity) or passes; returns an error
+ * NextResponse when a signature was required/present but invalid.
+ */
+function verifyInboundSignature(
+  request: NextRequest,
+  rawBody: string,
+  authMethod: "cookie" | "api_key"
+): NextResponse | null {
+  if (authMethod !== "api_key") return null; // signatures only apply to API-key callers
+
+  const apiKey = request.headers.get("x-api-key") || "";
+  const header = request.headers.get("x-signature-256") || "";
+  const requireSignature = process.env.WEBHOOK_INBOUND_REQUIRE_SIGNATURE === "true";
+
+  if (!header) {
+    if (requireSignature) {
+      return NextResponse.json(
+        { error: "X-Signature-256 header is required for this endpoint" },
+        { status: 401 }
+      );
+    }
+    return null;
+  }
+
+  const expected = "sha256=" + crypto.createHmac("sha256", apiKey).update(rawBody).digest("hex");
+  const provided = Buffer.from(header);
+  const expectedBuf = Buffer.from(expected);
+
+  if (provided.length !== expectedBuf.length || !crypto.timingSafeEqual(provided, expectedBuf)) {
+    return NextResponse.json({ error: "Invalid X-Signature-256" }, { status: 401 });
+  }
+
+  return null;
+}
+
 // POST /api/webhooks/inbound - external systems trigger workflows here.
-// Authenticate with an API key (X-API-Key header).
+// Authenticate with an API key (X-API-Key header). Optionally sign the raw
+// body with HMAC-SHA256 using that same key (X-Signature-256: sha256=<hex>);
+// set WEBHOOK_INBOUND_REQUIRE_SIGNATURE=true to make signing mandatory.
 export async function POST(request: NextRequest) {
   const auth = await requireAuth(request, "conversations:create");
   if (!isAuthenticated(auth)) return auth;
 
   try {
-    const body = await request.json();
+    const contentLength = Number(request.headers.get("content-length") || 0);
+    if (contentLength > MAX_BODY_BYTES) {
+      return NextResponse.json(
+        { error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` },
+        { status: 413 }
+      );
+    }
+
+    const rawBody = await request.text();
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES) {
+      return NextResponse.json(
+        { error: `Request body too large (max ${MAX_BODY_BYTES} bytes)` },
+        { status: 413 }
+      );
+    }
+
+    const rateResult = checkRateLimit(`webhook_inbound:${auth.userId}`, RATE_LIMITS.webhookInbound);
+    if (!rateResult.allowed) {
+      const response = NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 }
+      );
+      response.headers.set("Retry-After", String(Math.ceil((rateResult.resetAt - Date.now()) / 1000)));
+      return response;
+    }
+
+    const signatureError = verifyInboundSignature(request, rawBody, auth.authMethod);
+    if (signatureError) {
+      logger.warn("Inbound webhook rejected: invalid or missing signature", { userId: auth.userId });
+      return signatureError;
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
+    }
+
     const message = typeof body.message === "string" ? body.message.trim() : "";
     const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
     const customerContact = typeof body.customerContact === "string" ? body.customerContact.trim() : "";

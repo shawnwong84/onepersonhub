@@ -31,6 +31,8 @@ export const RATE_LIMITS = {
   apiRead: { maxRequests: 600, windowMs: 60 * 1000 } as RateLimitConfig,
   apiWrite: { maxRequests: 180, windowMs: 60 * 1000 } as RateLimitConfig,
   realtime: { maxRequests: 120, windowMs: 60 * 1000 } as RateLimitConfig,
+  // Inbound webhook: external systems triggering workflows, keyed per caller.
+  webhookInbound: { maxRequests: 60, windowMs: 60 * 1000 } as RateLimitConfig,
 } as const;
 
 export interface RateLimitResult {

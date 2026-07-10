@@ -26,7 +26,11 @@ Roadmaps 1–4 delivered the features. This roadmap makes them safe to sell.
   - [ ] Key-rotation procedure documented (decrypt-with-old/re-encrypt-with-new script; not yet written).
   - [ ] API key hash review: `ApiKey.key` is still looked up by plaintext equality (bearer-token pattern). Switching to a hash-and-compare scheme is a larger, user-visible change (existing keys would need reissuing) — deliberately deferred as its own reviewed step rather than bundled here.
   - Verified end-to-end: raw SQL confirms `enc:v1:`-prefixed ciphertext at rest in all three locations; the app decrypts back to the exact original value through normal API calls; 11 new unit tests for the crypto module (round-trip, random IV per encryption, legacy-plaintext passthrough, fail-closed on tamper/wrong key, prod-without-key throws, hex/base64 key formats).
-- [ ] Inbound webhook hardening: per-key rate limit, optional HMAC signature verification, payload size limits (length check exists).
+- [x] Inbound webhook hardening (`POST /api/webhooks/inbound`):
+  - [x] Per-caller rate limit (60 req/min, keyed by resolved auth identity, `RATE_LIMITS.webhookInbound`); 429 with `Retry-After` on exceed.
+  - [x] Payload size cap (64KB): fast-path rejection via `Content-Length`, always-enforced check against the actual body.
+  - [x] Optional HMAC-SHA256 signature verification (`X-Signature-256: sha256=<hex>`, signed with the caller's own API key over the raw body); timing-safe compare. Advisory by default, enforceable via `WEBHOOK_INBOUND_REQUIRE_SIGNATURE=true`. Applies only to API-key callers — cookie-session calls are already authenticated and skip it.
+  - Verified: 8 unit tests plus 5 live checks against the running dev server with a real API key (plain request accepted, oversized body → 413, valid signature accepted, invalid signature → 401, 65 rapid requests → 429 with `Retry-After`).
 - [ ] Auth hardening: login attempt lockout/backoff (rate limit exists — add lockout), logout-all-sessions on password change (JWT version claim), configurable session lifetime.
 - [ ] Security headers audit (CSP, HSTS behind TLS, X-Frame-Options) in middleware/proxy.
 - [ ] `npm audit` triage; pin or patch anything with a known exploit path.
