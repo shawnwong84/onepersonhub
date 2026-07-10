@@ -81,6 +81,18 @@ function addHeaders(
   return response;
 }
 
+/**
+ * NextResponse.next() that forwards the request id to the route handler via
+ * a request header, so requireAuth (called at the top of virtually every
+ * protected route) can pick it up and attach it to every log line emitted
+ * while handling this request — without touching each route file.
+ */
+function nextWithRequestId(request: NextRequest, requestId: string): NextResponse {
+  const headers = new Headers(request.headers);
+  headers.set("x-request-id", requestId);
+  return NextResponse.next({ request: { headers } });
+}
+
 function getClientIp(request: NextRequest): string {
   return (
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -140,7 +152,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/channels/sms") ||
     pathname.startsWith("/api/channels/telegram")
   ) {
-    return addHeaders(NextResponse.next(), requestId);
+    return addHeaders(nextWithRequestId(request, requestId), requestId);
   }
 
   // Rate limiting for auth mutations. Session reads are handled by the
@@ -158,7 +170,7 @@ export async function middleware(request: NextRequest) {
       return addHeaders(response, requestId, { limit: RATE_LIMITS.auth.maxRequests, remaining: 0, resetAt: rateResult.resetAt });
     }
 
-    return addHeaders(NextResponse.next(), requestId, {
+    return addHeaders(nextWithRequestId(request, requestId), requestId, {
       limit: RATE_LIMITS.auth.maxRequests,
       remaining: rateResult.remaining,
       resetAt: rateResult.resetAt,
@@ -166,7 +178,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isPublic) {
-    return addHeaders(NextResponse.next(), requestId);
+    return addHeaders(nextWithRequestId(request, requestId), requestId);
   }
 
   // API rate limiting
@@ -212,7 +224,7 @@ export async function middleware(request: NextRequest) {
 
   // API key auth is validated in route handlers (requireAuth), just pass through
   if (apiKey && !token) {
-    return addHeaders(NextResponse.next(), requestId, apiRateInfo);
+    return addHeaders(nextWithRequestId(request, requestId), requestId, apiRateInfo);
   }
 
   // Verify JWT structure
@@ -233,7 +245,7 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  return addHeaders(NextResponse.next(), requestId, apiRateInfo);
+  return addHeaders(nextWithRequestId(request, requestId), requestId, apiRateInfo);
 }
 
 export const config = {

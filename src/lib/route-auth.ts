@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import { hasPermission, Permission } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { setLogContext } from "@/lib/log-context";
 
 interface AuthContext {
   userId: string;
@@ -48,6 +49,12 @@ export async function requireAuth(
   request: NextRequest,
   permission?: Permission
 ): Promise<AuthContext | NextResponse> {
+  // Correlate every log line the rest of this request's handling emits with
+  // the id middleware.ts generated (or forwarded) for it — set for the
+  // remainder of this async chain, not just requireAuth's own execution.
+  const requestId = request.headers.get("x-request-id");
+  if (requestId) setLogContext({ requestId });
+
   // Try API key auth first
   const apiKey = request.headers.get("x-api-key");
   if (apiKey) {

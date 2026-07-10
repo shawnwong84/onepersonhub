@@ -1,3 +1,5 @@
+import { getLogContext } from "@/lib/log-context";
+
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 interface LogEntry {
@@ -19,11 +21,15 @@ function createEntry(
   message: string,
   context?: Record<string, unknown>
 ): LogEntry {
+  const activeContext = getLogContext();
+  const mergedContext =
+    activeContext || context ? { ...activeContext, ...context } : undefined;
+
   return {
     level,
     message,
     timestamp: new Date().toISOString(),
-    context,
+    context: mergedContext,
   };
 }
 

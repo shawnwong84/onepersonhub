@@ -134,7 +134,7 @@ export async function processIncomingMessage(
   if (message.fromMe) return;
   if (!markMessageProcessing(message)) return;
 
-  logger.info("[WhatsApp] Incoming message received", {
+  logger.debug("[WhatsApp] Incoming message received", {
     from: message.from,
     hasMedia: message.hasMedia,
     account: account?.identifier,
@@ -221,7 +221,7 @@ export async function processIncomingMessage(
   }
 
   if (isHumanTakeover(conversation.metadata)) {
-    logger.info("[WhatsApp] Human takeover active; skipping workflow and AI reply", {
+    logger.debug("[WhatsApp] Human takeover active; skipping workflow and AI reply", {
       conversationId: conversation.id,
     });
     await saveIncomingMessageOnly(conversation.id, messageContent);
@@ -244,7 +244,7 @@ export async function processIncomingMessage(
   const automation = await getChannelAutomationSettings("whatsapp");
 
   if (!automation.isActive || automation.mode === "manual_only") {
-    logger.info("[WhatsApp] Channel automation disabled; saving message only", {
+    logger.debug("[WhatsApp] Channel automation disabled; saving message only", {
       conversationId: conversation.id,
       mode: automation.mode,
     });

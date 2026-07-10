@@ -7,6 +7,7 @@ import { sendEmail } from "@/lib/channels/email";
 import { findMarketplaceModule } from "@/lib/marketplace/catalog";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 import { acquireWorkerTickLock } from "@/lib/worker-lock";
+import { runWithLogContext } from "@/lib/log-context";
 
 interface HeartbeatConfig {
   heartbeatEnabled: boolean;
@@ -222,8 +223,10 @@ const globalForHeartbeat = globalThis as unknown as {
 };
 
 async function tick() {
-  if (!(await acquireWorkerTickLock("reporter-heartbeat", 50 * 1000))) return;
-  await runReporterHeartbeat().catch((error) => logger.error("Reporter heartbeat failed:", error));
+  return runWithLogContext({ workerRunId: crypto.randomUUID() }, async () => {
+    if (!(await acquireWorkerTickLock("reporter-heartbeat", 50 * 1000))) return;
+    await runReporterHeartbeat().catch((error) => logger.error("Reporter heartbeat failed:", error));
+  });
 }
 
 /** Started once from instrumentation; checks every minute whether a beat is due. */

@@ -2790,7 +2790,7 @@ export async function runChannelWorkflows(
       },
     });
 
-    logger.info("[Workflow] Channel workflow handled message", {
+    logger.debug("[Workflow] Channel workflow handled message", {
       flowId: flow.id,
       flowName: flow.name,
       conversationId: input.conversationId,

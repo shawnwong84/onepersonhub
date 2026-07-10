@@ -1,6 +1,7 @@
 import { logger } from "@/lib/logger";
 import { processDueWorkflowJobs } from "@/lib/workflow-runtime";
 import { acquireWorkerTickLock } from "@/lib/worker-lock";
+import { runWithLogContext } from "@/lib/log-context";
 
 const globalForWorker = globalThis as unknown as {
   workflowWorkerTimer?: NodeJS.Timeout;
@@ -8,16 +9,18 @@ const globalForWorker = globalThis as unknown as {
 };
 
 async function tick() {
-  if (!(await acquireWorkerTickLock("workflow-worker", 25 * 1000))) return;
-  try {
-    const result = await processDueWorkflowJobs(20);
-    const processed = (result as { processed?: number })?.processed;
-    if (processed) {
-      logger.info(`Workflow worker processed ${processed} due job(s).`);
+  return runWithLogContext({ workerRunId: crypto.randomUUID() }, async () => {
+    if (!(await acquireWorkerTickLock("workflow-worker", 25 * 1000))) return;
+    try {
+      const result = await processDueWorkflowJobs(20);
+      const processed = (result as { processed?: number })?.processed;
+      if (processed) {
+        logger.info(`Workflow worker processed ${processed} due job(s).`);
+      }
+    } catch (error) {
+      logger.error("Workflow worker failed:", error);
     }
-  } catch (error) {
-    logger.error("Workflow worker failed:", error);
-  }
+  });
 }
 
 /**

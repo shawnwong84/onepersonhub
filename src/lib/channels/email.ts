@@ -353,7 +353,7 @@ async function processEmail(parsed: ParsedMail, config: EmailConfig) {
   const automation = await getChannelAutomationSettings("email");
 
   if (!automation.isActive || automation.mode === "manual_only") {
-    logger.info("[Email] Channel automation disabled; saving message only", {
+    logger.debug("[Email] Channel automation disabled; saving message only", {
       conversationId: conversation.id,
       mode: automation.mode,
     });

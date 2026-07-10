@@ -7,6 +7,7 @@ import {
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 import { assertSafeExternalUrl } from "@/lib/url-safety";
 import { acquireWorkerTickLock } from "@/lib/worker-lock";
+import { runWithLogContext } from "@/lib/log-context";
 
 function stripHtml(html: string): string {
   return html
@@ -273,8 +274,10 @@ const globalForRecrawl = globalThis as unknown as {
 };
 
 async function recrawlTick() {
-  if (!(await acquireWorkerTickLock("website-recrawl", 9 * 60 * 1000))) return;
-  await runDueWebsiteRecrawls().catch((error) => logger.error("Website recrawl worker failed:", error));
+  return runWithLogContext({ workerRunId: crypto.randomUUID() }, async () => {
+    if (!(await acquireWorkerTickLock("website-recrawl", 9 * 60 * 1000))) return;
+    await runDueWebsiteRecrawls().catch((error) => logger.error("Website recrawl worker failed:", error));
+  });
 }
 
 /** Checks every 10 minutes for website sources due a scheduled recrawl. */
