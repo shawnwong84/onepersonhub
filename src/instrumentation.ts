@@ -1,5 +1,14 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { validateStartupEnv } = await import("@/lib/env-validation");
+    const { logger } = await import("@/lib/logger");
+    try {
+      await validateStartupEnv();
+    } catch (error) {
+      logger.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+
     const { registerShutdownHandlers } = await import("@/lib/shutdown");
     registerShutdownHandlers();
 

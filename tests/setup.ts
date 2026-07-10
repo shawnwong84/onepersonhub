@@ -4,6 +4,10 @@ import { vi } from "vitest";
 process.env.JWT_SECRET = "test-secret-key-for-testing-only";
 process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/owly_test";
 process.env.NODE_ENV = "test";
+// Tests must be hermetic and never depend on the developer's local .env
+// (Vitest auto-loads it) — in particular, checkRateLimit/worker locks would
+// otherwise try to connect to a real Redis instance during test runs.
+delete process.env.REDIS_URL;
 
 // Mock Prisma globally
 vi.mock("@/lib/prisma", () => ({
