@@ -12,6 +12,32 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-API-Version": API_VERSION,
 };
 
+// CSP and HSTS are production-only: the Next dev server needs 'unsafe-eval'
+// for HMR/source maps, and HSTS pinning a browser to HTTPS is wrong for a
+// plain-http local dev server.
+// Next.js's App Router streams RSC payloads via inline `<script>` tags on every
+// page, so a strict nonce-based script-src (the "right" CSP) would require
+// disabling static rendering app-wide — a real, documented tradeoff
+// (see node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md).
+// We take Next's own documented "Without Nonces" fallback instead: 'unsafe-inline'
+// on script-src, which still blocks loading external script/img/connect/font
+// origins outside our own and framing by other sites.
+const PRODUCTION_SECURITY_HEADERS: Record<string, string> = {
+  "Content-Security-Policy": [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join("; "),
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+};
+
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "";
 
 function generateRequestId(): string {
@@ -26,6 +52,11 @@ function addHeaders(
   // Security headers
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     response.headers.set(key, value);
+  }
+  if (process.env.NODE_ENV === "production") {
+    for (const [key, value] of Object.entries(PRODUCTION_SECURITY_HEADERS)) {
+      response.headers.set(key, value);
+    }
   }
 
   // Request ID
