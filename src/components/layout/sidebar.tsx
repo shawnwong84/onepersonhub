@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   GitBranch,
   Bot,
   Coins,
@@ -31,6 +32,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getModuleIcon } from "@/lib/marketplace/icon-map";
+
+const COLLAPSED_SECTIONS_KEY = "owly-sidebar-collapsed-sections";
 
 export interface NavSection {
   title?: string;
@@ -74,17 +77,12 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: "Insights",
-    items: [
-      { name: "Analytics", href: "/analytics", icon: BarChart3 },
-      { name: "Token Usage", href: "/token-usage", icon: Coins },
-      { name: "Activity Log", href: "/activity", icon: ScrollText },
-    ],
-  },
-  {
     title: "System",
     items: [
       { name: "Marketplace", href: "/marketplace", icon: Store },
+      { name: "Analytics", href: "/analytics", icon: BarChart3 },
+      { name: "Token Usage", href: "/token-usage", icon: Coins },
+      { name: "Activity Log", href: "/activity", icon: ScrollText },
       { name: "Administration", href: "/admin", icon: Shield },
       { name: "API Docs", href: "/api-docs", icon: FileCode },
       { name: "Settings", href: "/settings", icon: Settings },
@@ -103,6 +101,28 @@ export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [installedModules, setInstalledModules] = useState<InstalledModule[]>([]);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
+      if (stored) setCollapsedSections(JSON.parse(stored));
+    } catch {
+      // Ignore malformed/inaccessible storage - sections just start expanded.
+    }
+  }, []);
+
+  const toggleSection = (title: string) => {
+    setCollapsedSections((current) => {
+      const next = { ...current, [title]: !current[title] };
+      try {
+        localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(next));
+      } catch {
+        // Non-fatal - the toggle still works for this session.
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -131,8 +151,9 @@ export function Sidebar() {
         icon: getModuleIcon(module.iconName),
       })),
     };
-    const systemIndex = NAV_SECTIONS.findIndex((section) => section.title === "System");
-    return [...NAV_SECTIONS.slice(0, systemIndex), moduleSection, ...NAV_SECTIONS.slice(systemIndex)];
+    // Pinned right after the ungrouped Home section - modules are a primary
+    // workspace, not an afterthought buried near the bottom.
+    return [NAV_SECTIONS[0], moduleSection, ...NAV_SECTIONS.slice(1)];
   }, [installedModules]);
 
   return (
@@ -155,43 +176,62 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-2 py-3 overflow-y-auto space-y-3">
-        {navSections.map((section, si) => (
+        {navSections.map((section, si) => {
+          // Per-section collapse only applies in the wide sidebar - the
+          // icon-only collapsed mode always shows every item (there's no
+          // title to click to re-expand a section in that mode).
+          const isSectionCollapsed =
+            !collapsed && section.title ? !!collapsedSections[section.title] : false;
+
+          return (
           <div key={si}>
             {section.title && !collapsed && (
-              <p className="px-3 mb-1 text-[10px] uppercase tracking-wider text-white/40 font-medium">
+              <button
+                onClick={() => toggleSection(section.title as string)}
+                className="flex w-full items-center justify-between px-3 mb-1 text-[10px] uppercase tracking-wider text-white/40 font-medium hover:text-white/70 transition-colors"
+              >
                 {section.title}
-              </p>
+                <ChevronDown
+                  className={cn(
+                    "h-3 w-3 transition-transform",
+                    isSectionCollapsed && "-rotate-90"
+                  )}
+                />
+              </button>
             )}
             {collapsed && si > 0 && (
               <div className="mx-3 mb-2 border-t border-white/10" />
             )}
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const isActive =
-                  pathname === item.href ||
-                  (item.href !== "/" && pathname.startsWith(item.href));
+            {!isSectionCollapsed && (
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const isActive =
+                    pathname === item.href ||
+                    (item.href !== "/" && pathname.startsWith(item.href));
 
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    prefetch={false}
-                    className={cn(
-                      "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors",
-                      isActive
-                        ? "bg-owly-sidebar-active text-white"
-                        : "text-white/65 hover:bg-owly-sidebar-hover hover:text-white"
-                    )}
-                    title={collapsed ? item.name : undefined}
-                  >
-                    <item.icon className="h-4 w-4 flex-shrink-0" />
-                    {!collapsed && <span>{item.name}</span>}
-                  </Link>
-                );
-              })}
-            </div>
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      prefetch={false}
+                      className={cn(
+                        "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors",
+                        isActive
+                          ? "bg-owly-sidebar-active text-white"
+                          : "text-white/65 hover:bg-owly-sidebar-hover hover:text-white"
+                      )}
+                      title={collapsed ? item.name : undefined}
+                    >
+                      <item.icon className="h-4 w-4 flex-shrink-0" />
+                      {!collapsed && <span>{item.name}</span>}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="px-2 py-2 border-t border-white/10">
