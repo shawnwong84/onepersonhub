@@ -237,7 +237,13 @@ Page work:
 
   Noted but out of scope for this pass: at 375px width the page's two-pane list+detail layout doesn't stack, causing horizontal overflow — a pre-existing structural/layout issue (not introduced by this token swap), left for a future mobile-responsive pass on this page.
 
-- [ ] Inbox (conversations list) redesign: identicon avatars, channel glyphs, unread weight, assignee chips — this is the most-used screen and furthest from Intercom/Crisp-class polish.
+- [x] Inbox (conversations list) redesign: identicon avatars, channel glyphs, unread weight, assignee chips — this is the most-used screen and furthest from Intercom/Crisp-class polish.
+
+  `src/app/(dashboard)/conversations/page.tsx`'s row went from a channel-icon-in-a-box + a "--"-separated soup of meta text to: a new shared `src/components/ui/avatar.tsx` (`InitialsAvatar` — deterministic color from a hash of the conversation id, so the same thread always gets the same color) with the channel icon as a small overlaid corner badge (using the shared `getChannelColor`, replacing yet another local ad-hoc `channelColors` map that only covered whatsapp/email/phone); an assignee chip (person icon + name) replacing the old plain "-- assigned" text; and a "needs attention" weighting (bold name/preview + a small primary-colored dot) for threads that are still active with the customer's message as the latest one.
+
+  There's no `unread`/`lastReadAt` column on `Conversation` in the schema — rather than add one (a bigger, riskier schema + read-tracking feature), the review's "unread weight" ask was implemented as a genuine business-meaning proxy instead: bold when a thread is active and awaiting a reply from us, not a fake read/unread flag.
+
+  Verified live at 1600px and 375px, light and dark: avatars render with correct deterministic colors and initials, channel badges match the row's channel, the assignee chip shows correctly for an assigned conversation, opening a conversation into the detail pane still works (also migrated its header icon off the same local color map), and mobile has no overflow issues. `tsc`/lint clean, full suite (409/409) passing.
 - [ ] Tickets table: de-emphasize repeated defaults, bulk select + assign, visible pagination.
 - [ ] Settings: cap form width (~560px), scrollable tab bar with fade affordance, sticky save bar.
 - [ ] Sidebar IA: merge Insights into System, collapsible sections, Modules pinned higher.

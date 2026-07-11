@@ -32,6 +32,8 @@ import {
   getChannelLabel,
   getStatusColor,
 } from "@/lib/utils";
+import { getChannelColor } from "@/lib/status-colors";
+import { InitialsAvatar } from "@/components/ui/avatar";
 import { unwrapListResponse } from "@/lib/api-response";
 
 interface MessageData {
@@ -224,12 +226,6 @@ const channelIcons: Record<string, React.ElementType> = {
   whatsapp: MessageCircle,
   email: Mail,
   phone: Phone,
-};
-
-const channelColors: Record<string, string> = {
-  whatsapp: "text-green-600 bg-green-50",
-  email: "text-blue-600 bg-blue-50",
-  phone: "text-purple-600 bg-purple-50",
 };
 
 const channels = [
@@ -951,6 +947,12 @@ function ConversationsPageContent() {
                     channelIcons[conv.channel] || MessageSquare;
                   const lastMessage = conv.messages[0];
                   const isSelected = selectedId === conv.id;
+                  // No dedicated unread/read-tracking column exists on
+                  // Conversation - the customer is "waiting on us" (the
+                  // closest real signal to "unread") when the thread is
+                  // still active and the last message came from them.
+                  const needsAttention =
+                    conv.status === "active" && lastMessage?.role === "customer";
 
                   return (
                     <button
@@ -962,68 +964,40 @@ function ConversationsPageContent() {
                       )}
                     >
                       <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            "p-2 rounded-lg mt-0.5 flex-shrink-0",
-                            channelColors[conv.channel] ||
-                              "text-owly-primary bg-owly-primary-50"
-                          )}
-                        >
-                          <ChannelIcon className="h-4 w-4" />
+                        <div className="relative flex-shrink-0 mt-0.5">
+                          <InitialsAvatar name={conv.customerName} seed={conv.id} size="md" />
+                          <span
+                            className={cn(
+                              "absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full ring-2 ring-owly-surface",
+                              getChannelColor(conv.channel)
+                            )}
+                          >
+                            <ChannelIcon className="h-2.5 w-2.5" />
+                          </span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <p className="font-medium text-sm text-owly-text truncate">
+                          <div className="flex items-center justify-between gap-2">
+                            <p
+                              className={cn(
+                                "text-sm text-owly-text truncate",
+                                needsAttention ? "font-semibold" : "font-medium"
+                              )}
+                            >
                               {conv.customerName}
                             </p>
-                            <span className="text-xs text-owly-text-light flex-shrink-0 ml-2">
+                            <span className="text-xs text-owly-text-light flex-shrink-0">
                               {formatRelativeTime(conv.updatedAt)}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs text-owly-text-light">
-                              {getChannelLabel(conv.channel)}
-                            </span>
-                            <span className="text-xs text-owly-text-light">
-                              --
-                            </span>
-                            <span className="text-xs text-owly-text-light">
-                              {conv._count.messages} messages
-                            </span>
-                            {(conv.metadata?.humanTakeover ||
-                              conv.metadata?.automationPaused) && (
-                              <>
-                                <span className="text-xs text-owly-text-light">
-                                  --
-                                </span>
-                                <span className="text-xs font-semibold text-amber-700">
-                                  human takeover
-                                </span>
-                              </>
-                            )}
-                            {conv.metadata?.pendingWorkflowApproval?.status === "pending" && (
-                              <>
-                                <span className="text-xs text-owly-text-light">
-                                  --
-                                </span>
-                                <span className="text-xs font-semibold text-violet-700">
-                                  waiting approval
-                                </span>
-                              </>
-                            )}
-                            {conv.metadata?.assignedToName && (
-                              <>
-                                <span className="text-xs text-owly-text-light">
-                                  --
-                                </span>
-                                <span className="text-xs font-semibold text-blue-700">
-                                  assigned
-                                </span>
-                              </>
-                            )}
-                          </div>
                           {lastMessage && (
-                            <p className="text-sm text-owly-text-light mt-1 truncate">
+                            <p
+                              className={cn(
+                                "text-sm mt-0.5 truncate",
+                                needsAttention
+                                  ? "text-owly-text font-medium"
+                                  : "text-owly-text-light"
+                              )}
+                            >
                               {lastMessage.role === "admin" && (
                                 <span className="text-owly-primary font-medium">
                                   You:{" "}
@@ -1032,7 +1006,7 @@ function ConversationsPageContent() {
                               {previewMessage(lastMessage.content, conv.channel)}
                             </p>
                           )}
-                          <div className="flex items-center gap-2 mt-1.5">
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                             <span
                               className={cn(
                                 "px-2 py-0.5 rounded-full text-xs font-medium",
@@ -1041,6 +1015,32 @@ function ConversationsPageContent() {
                             >
                               {conv.status}
                             </span>
+                            {needsAttention && (
+                              <span
+                                className="h-1.5 w-1.5 rounded-full bg-owly-primary"
+                                title="Awaiting reply"
+                              />
+                            )}
+                            <span className="text-xs text-owly-text-light">
+                              {getChannelLabel(conv.channel)} · {conv._count.messages} msgs
+                            </span>
+                            {conv.metadata?.assignedToName && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-owly-bg px-1.5 py-0.5 text-[10px] font-medium text-owly-text-light">
+                                <UserRound className="h-2.5 w-2.5" />
+                                {conv.metadata.assignedToName}
+                              </span>
+                            )}
+                            {(conv.metadata?.humanTakeover ||
+                              conv.metadata?.automationPaused) && (
+                              <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                                human takeover
+                              </span>
+                            )}
+                            {conv.metadata?.pendingWorkflowApproval?.status === "pending" && (
+                              <span className="text-xs font-semibold text-violet-700 dark:text-violet-400">
+                                waiting approval
+                              </span>
+                            )}
                             {conv.tags.slice(0, 2).map((ct) => (
                               <span
                                 key={ct.id}
@@ -1101,8 +1101,7 @@ function ConversationsPageContent() {
                 <div
                   className={cn(
                     "p-2 rounded-lg flex-shrink-0",
-                    channelColors[selectedConversation.channel] ||
-                      "text-owly-primary bg-owly-primary-50"
+                    getChannelColor(selectedConversation.channel)
                   )}
                 >
                   {(() => {
