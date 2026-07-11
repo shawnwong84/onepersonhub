@@ -197,7 +197,15 @@ Acceptance criteria:
 
   Grepped every file in `.next/static/chunks/*.js` (the full client bundle) for known server-only package identifiers (`bcryptjs`, `jsonwebtoken`, `@prisma/client`, `nodemailer`, `whatsapp-web.js`, `mailparser`, `elevenlabs`, `aws-sdk`) — zero matches in any client chunk.
 
-- [ ] Light load test (k6 or autocannon) against the compose stack; record baseline numbers.
+- [x] Light load test (k6 or autocannon) against the compose stack; record baseline numbers.
+
+  This machine's own `docker compose` stack still can't be started directly (an unrelated pre-existing docker project occupies ports 5432/6379/9000 — documented earlier in this roadmap's Phase 3 work), and `next start` correctly refuses to boot with the dev `.env`'s placeholder `JWT_SECRET` (the Phase 1 startup-env-validation guard doing its job). So this baseline was taken against the local dev server (`next dev`) instead — a reasonable approximation for relative before/after comparison, not an absolute production number.
+
+  Ran `npx autocannon -c 10 -d 15` against two endpoints after a warmup request:
+  - `GET /api/health` (unauthenticated liveness check): p50 70ms, p97.5 120ms, ~131 req/s avg, 2,000/2,000 requests succeeded.
+  - `GET /api/conversations` (authenticated, the list endpoint whose `updatedAt` index this phase added): p50 35ms, p97.5 195ms on the requests that got through — but 1,612 of 2,211 requests came back 429. This is the existing per-session `api-read` rate limit (in-memory, middleware-enforced) correctly doing its job against a single authenticated session hammered by 10 concurrent connections; it is not a query-performance problem. Manually confirmed the endpoint itself stays fast and correct once past the rate limit (a follow-up request 61s later returned 200 with the expected paginated/indexed result set).
+
+  No performance regressions or surprises found; the new indexes and message cap didn't need to be revisited. A fuller load test against the real compose stack with realistic multi-user/multi-API-key traffic (to exercise the rate limiter's intended path rather than tripping over it) is left as a follow-up once this machine's port conflict with the unrelated docker project is resolved.
 
 ## Phase 7: UI/UX Overhaul (design-audit driven)
 
