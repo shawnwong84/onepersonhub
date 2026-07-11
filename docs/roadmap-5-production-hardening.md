@@ -189,7 +189,14 @@ Acceptance criteria:
 
   Verified live against the running dev server: seeded a conversation to 261 messages via direct SQL, confirmed both the detail endpoint and the messages sub-route each return exactly 200, in ascending order, correctly containing the 200 most recent (oldest 61 dropped) — then cleaned up the synthetic rows. Also re-ran the full flow (login → real conversation with 11 messages) to confirm the common case is unaffected. `tsc --noEmit`, `npm run lint -- --max-warnings 0`, and the full test suite (409/409) all pass.
 
-- [ ] Bundle audit: lazy-load the flow editor and kanban; confirm no server-only libs leak client-side.
+- [x] Bundle audit: lazy-load the flow editor and kanban; confirm no server-only libs leak client-side.
+
+  Neither the flow editor (`src/app/(dashboard)/flows/page.tsx`, 2781 lines) nor the module kanban view (`src/app/(dashboard)/modules/[slug]/page.tsx`) uses a heavy third-party library (both are hand-built, no `reactflow`/`dnd-kit`/etc. in `package.json`), and neither is imported from `src/app/(dashboard)/layout.tsx` or any other shared/globally-loaded component — the dashboard layout only pulls in `Sidebar`, `MobileNav`, and `ReporterChatWidget`.
+
+  Ran a real production build (`npm run build`) and inspected each route's `page_client-reference-manifest.js` to compute actual per-route client JS: every dashboard route shares the same ~135KB baseline chunk set (framework/layout), and `/flows` (+53KB), `/modules/[slug]` (+24KB), and `/conversations` (+31KB) each only pull their own page-specific chunk on top — confirming Next's App Router file-based code splitting already isolates them per-route with no explicit `dynamic()` needed.
+
+  Grepped every file in `.next/static/chunks/*.js` (the full client bundle) for known server-only package identifiers (`bcryptjs`, `jsonwebtoken`, `@prisma/client`, `nodemailer`, `whatsapp-web.js`, `mailparser`, `elevenlabs`, `aws-sdk`) — zero matches in any client chunk.
+
 - [ ] Light load test (k6 or autocannon) against the compose stack; record baseline numbers.
 
 ## Phase 7: UI/UX Overhaul (design-audit driven)
