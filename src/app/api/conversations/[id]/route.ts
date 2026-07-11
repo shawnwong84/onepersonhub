@@ -5,6 +5,7 @@ import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { isUnscoped } from "@/lib/rbac-scope";
 import { emitConversationUpdate } from "@/lib/realtime";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
+import { recentMessagesQuery, toAscending } from "@/lib/message-history";
 
 export async function GET(
   request: NextRequest,
@@ -19,9 +20,7 @@ export async function GET(
     const conversation = await prisma.conversation.findUnique({
       where: { id },
       include: {
-        messages: {
-          orderBy: { createdAt: "asc" },
-        },
+        messages: recentMessagesQuery,
         customer: true,
         agent: {
           select: { id: true, name: true },
@@ -58,7 +57,7 @@ export async function GET(
       );
     }
 
-    return NextResponse.json(conversation);
+    return NextResponse.json({ ...conversation, messages: toAscending(conversation.messages) });
   } catch (error) {
     logger.error("Failed to fetch conversation:", error);
     return NextResponse.json(
@@ -130,9 +129,7 @@ export async function PUT(
         ...(agentId !== undefined && { agentId: agentId || null }),
       },
       include: {
-        messages: {
-          orderBy: { createdAt: "asc" },
-        },
+        messages: recentMessagesQuery,
         agent: {
           select: { id: true, name: true },
         },
@@ -147,6 +144,7 @@ export async function PUT(
         },
       },
     });
+    conversation.messages = toAscending(conversation.messages);
 
     const changes: Record<string, { from: string | number | null; to: string | number | null }> = {};
     if (status !== undefined && status !== existing.status) {
@@ -217,13 +215,15 @@ export async function PUT(
       const updated = await prisma.conversation.findUnique({
         where: { id },
         include: {
-          messages: { orderBy: { createdAt: "asc" } },
+          messages: recentMessagesQuery,
           tags: { include: { tag: true } },
           _count: { select: { messages: true } },
         },
       });
 
-      return NextResponse.json(updated);
+      return NextResponse.json(
+        updated ? { ...updated, messages: toAscending(updated.messages) } : updated
+      );
     }
 
     emitConversationUpdate(id, { status, customerName });

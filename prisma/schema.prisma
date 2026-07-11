@@ -331,6 +331,9 @@ model Conversation {
   @@index([customerContact])
   @@index([channel, status])
   @@index([createdAt])
+  // The conversation list's default (and only) sort is updatedAt desc -
+  // without this, every list page load does a full sort with no index.
+  @@index([updatedAt])
   @@index([customerId])
   @@index([agentId])
   @@index([channelAccountId])
@@ -925,6 +928,9 @@ model ModuleRecord {
   @@index([conversationId])
   @@index([customerId])
   @@index([sourceMessageId])
+  // Every module-records query filters by moduleId (always present) and
+  // sorts updatedAt desc - a plain moduleId index still needs a full sort.
+  @@index([moduleId, updatedAt])
 }
 
 model ModuleRecordEvent {

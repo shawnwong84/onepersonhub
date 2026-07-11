@@ -6,6 +6,7 @@ import { emitNewMessage } from "@/lib/realtime";
 import { sendWhatsAppMessage } from "@/lib/channels/whatsapp";
 import { sendWhatsAppAccountMessage } from "@/lib/channels/whatsapp-accounts";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
+import { recentMessagesQuery, toAscending } from "@/lib/message-history";
 
 export async function GET(
   request: NextRequest,
@@ -30,10 +31,10 @@ export async function GET(
 
     const messages = await prisma.message.findMany({
       where: { conversationId: id },
-      orderBy: { createdAt: "asc" },
+      ...recentMessagesQuery,
     });
 
-    return NextResponse.json(messages);
+    return NextResponse.json(toAscending(messages));
   } catch (error) {
     logger.error("Failed to fetch messages:", error);
     return NextResponse.json(
