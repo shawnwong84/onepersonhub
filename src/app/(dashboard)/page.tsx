@@ -2,7 +2,10 @@ import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { OnboardingChecklist } from "@/components/ui/onboarding-checklist";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
+import { isUnscoped, conversationScope, ticketScope, type ScopedUser } from "@/lib/rbac-scope";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   MessageSquare,
   Ticket,
@@ -14,7 +17,46 @@ import {
 } from "lucide-react";
 import { formatRelativeTime, getChannelLabel, getStatusColor } from "@/lib/utils";
 
-async function getStats() {
+const TREND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface Trend {
+  change: string;
+  changeType: "positive" | "negative" | "neutral";
+}
+
+// Percentage change reads as nonsense against a zero baseline ("+infinity%");
+// fall back to a plain count in that case instead.
+function computeTrend(current: number, previous: number, noun: string): Trend {
+  if (previous === 0) {
+    if (current === 0) return { change: `No ${noun} yet`, changeType: "neutral" };
+    return { change: `+${current} new`, changeType: "positive" };
+  }
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct === 0) return { change: "No change vs last week", changeType: "neutral" };
+  return {
+    change: `${pct > 0 ? "+" : ""}${pct}% vs last week`,
+    changeType: pct > 0 ? "positive" : "negative",
+  };
+}
+
+// Rates compare as percentage-point deltas, not a percent-of-a-percent -
+// a 10% -> 15% rate is "+5pp", not the more confusing "+50%".
+function computeRateTrend(currentRate: number, previousRate: number): Trend {
+  const delta = currentRate - previousRate;
+  if (delta === 0) return { change: "No change vs last week", changeType: "neutral" };
+  return {
+    change: `${delta > 0 ? "+" : ""}${delta}pp vs last week`,
+    changeType: delta > 0 ? "positive" : "negative",
+  };
+}
+
+async function getStats(user: ScopedUser) {
+  const scoped = conversationScope(user);
+  const ticketScoped = ticketScope(user);
+  const now = new Date();
+  const periodStart = new Date(now.getTime() - TREND_WINDOW_MS);
+  const prevPeriodStart = new Date(now.getTime() - 2 * TREND_WINDOW_MS);
+
   const [
     totalConversations,
     activeConversations,
@@ -23,13 +65,24 @@ async function getStats() {
     totalMessages,
     recentConversations,
     channels,
+    newConversationsThisPeriod,
+    newConversationsPrevPeriod,
+    newTicketsThisPeriod,
+    newTicketsPrevPeriod,
+    resolvedThisPeriod,
+    createdThisPeriodForRate,
+    resolvedPrevPeriod,
+    createdPrevPeriodForRate,
   ] = await Promise.all([
-    prisma.conversation.count(),
-    prisma.conversation.count({ where: { status: "active" } }),
-    prisma.ticket.count(),
-    prisma.ticket.count({ where: { status: "open" } }),
-    prisma.message.count(),
+    prisma.conversation.count({ where: scoped }),
+    prisma.conversation.count({ where: { ...scoped, status: "active" } }),
+    prisma.ticket.count({ where: ticketScoped }),
+    prisma.ticket.count({ where: { ...ticketScoped, status: "open" } }),
+    isUnscoped(user)
+      ? prisma.message.count()
+      : prisma.message.count({ where: { conversation: scoped } }),
     prisma.conversation.findMany({
+      where: scoped,
       take: 10,
       orderBy: { updatedAt: "desc" },
       include: {
@@ -41,15 +94,46 @@ async function getStats() {
       where: { type: { in: ["whatsapp", "email", "phone"] } },
       select: { type: true, isActive: true, status: true },
     }),
+    prisma.conversation.count({ where: { ...scoped, createdAt: { gte: periodStart } } }),
+    prisma.conversation.count({
+      where: { ...scoped, createdAt: { gte: prevPeriodStart, lt: periodStart } },
+    }),
+    prisma.ticket.count({ where: { ...ticketScoped, createdAt: { gte: periodStart } } }),
+    prisma.ticket.count({
+      where: { ...ticketScoped, createdAt: { gte: prevPeriodStart, lt: periodStart } },
+    }),
+    prisma.conversation.count({
+      where: { ...scoped, status: "resolved", createdAt: { gte: periodStart } },
+    }),
+    prisma.conversation.count({ where: { ...scoped, createdAt: { gte: periodStart } } }),
+    prisma.conversation.count({
+      where: {
+        ...scoped,
+        status: "resolved",
+        createdAt: { gte: prevPeriodStart, lt: periodStart },
+      },
+    }),
+    prisma.conversation.count({
+      where: { ...scoped, createdAt: { gte: prevPeriodStart, lt: periodStart } },
+    }),
   ]);
 
   const resolvedConversations = await prisma.conversation.count({
-    where: { status: "resolved" },
+    where: { ...scoped, status: "resolved" },
   });
 
   const resolutionRate =
     totalConversations > 0
       ? Math.round((resolvedConversations / totalConversations) * 100)
+      : 0;
+
+  const rateThisPeriod =
+    createdThisPeriodForRate > 0
+      ? Math.round((resolvedThisPeriod / createdThisPeriodForRate) * 100)
+      : 0;
+  const ratePrevPeriod =
+    createdPrevPeriodForRate > 0
+      ? Math.round((resolvedPrevPeriod / createdPrevPeriodForRate) * 100)
       : 0;
 
   return {
@@ -61,6 +145,18 @@ async function getStats() {
     resolutionRate,
     recentConversations,
     channels,
+    trends: {
+      conversations: computeTrend(
+        newConversationsThisPeriod,
+        newConversationsPrevPeriod,
+        "new conversations"
+      ),
+      tickets: computeTrend(newTicketsThisPeriod, newTicketsPrevPeriod, "new tickets"),
+      resolutionRate:
+        createdThisPeriodForRate === 0 && createdPrevPeriodForRate === 0
+          ? ({ change: "No data yet", changeType: "neutral" } as Trend)
+          : computeRateTrend(rateThisPeriod, ratePrevPeriod),
+    },
   };
 }
 
@@ -84,7 +180,17 @@ function previewMessage(content: string, channel: string, maxLength = 96) {
 }
 
 export default async function DashboardPage() {
-  const stats = await getStats();
+  const currentUser = await getCurrentUser();
+  if (!currentUser) redirect("/login");
+
+  const scopedUser: ScopedUser = {
+    userId: currentUser.id,
+    role: currentUser.role,
+    userType: currentUser.userType,
+  };
+  const scoped = !isUnscoped(scopedUser);
+
+  const stats = await getStats(scopedUser);
   const channelStatusByType = new Map(
     stats.channels.map((channel) => [channel.type, channel])
   );
@@ -103,15 +209,21 @@ export default async function DashboardPage() {
     <>
       <Header
         title="Dashboard"
-        description="Overview of your customer support activity"
+        description={
+          scoped
+            ? "Overview of your assigned conversations and tickets"
+            : "Overview of your customer support activity"
+        }
       />
       <div className="flex-1 overflow-auto p-6 space-y-6">
         <OnboardingChecklist />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Total Conversations"
+            title={scoped ? "My Conversations" : "Total Conversations"}
             value={stats.totalConversations}
+            change={stats.trends.conversations.change}
+            changeType={stats.trends.conversations.changeType}
             icon={MessageSquare}
           />
           <StatCard
@@ -121,14 +233,18 @@ export default async function DashboardPage() {
             iconColor="bg-green-50 text-green-600"
           />
           <StatCard
-            title="Open Tickets"
+            title={scoped ? "My Open Tickets" : "Open Tickets"}
             value={stats.openTickets}
+            change={stats.trends.tickets.change}
+            changeType={stats.trends.tickets.changeType}
             icon={Ticket}
             iconColor="bg-orange-50 text-orange-600"
           />
           <StatCard
             title="Resolution Rate"
             value={stats.totalConversations === 0 ? "No data yet" : `${stats.resolutionRate}%`}
+            change={stats.totalConversations === 0 ? undefined : stats.trends.resolutionRate.change}
+            changeType={stats.trends.resolutionRate.changeType}
             icon={CheckCircle}
             iconColor="bg-blue-50 text-blue-600"
           />
@@ -138,17 +254,20 @@ export default async function DashboardPage() {
           <div className="lg:col-span-2 bg-owly-surface rounded-xl border border-owly-border">
             <div className="px-5 py-4 border-b border-owly-border">
               <h3 className="font-semibold text-owly-text">
-                Recent Conversations
+                {scoped ? "My Recent Conversations" : "Recent Conversations"}
               </h3>
             </div>
             <div className="divide-y divide-owly-border p-5">
               {stats.recentConversations.length === 0 ? (
                 <div className="px-5 py-12 text-center text-owly-text-light">
                   <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                  <p className="font-medium">No conversations yet</p>
+                  <p className="font-medium">
+                    {scoped ? "No conversations assigned to you yet" : "No conversations yet"}
+                  </p>
                   <p className="text-sm mt-1">
-                    Conversations will appear here once customers start reaching
-                    out
+                    {scoped
+                      ? "Conversations will appear here once one is assigned to you"
+                      : "Conversations will appear here once customers start reaching out"}
                   </p>
                 </div>
               ) : (
@@ -246,11 +365,15 @@ export default async function DashboardPage() {
               </div>
               <div className="p-5 space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-owly-text-light">Total Messages</span>
+                  <span className="text-owly-text-light">
+                    {scoped ? "My Messages" : "Total Messages"}
+                  </span>
                   <span className="font-medium">{stats.totalMessages}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-owly-text-light">Total Tickets</span>
+                  <span className="text-owly-text-light">
+                    {scoped ? "My Tickets" : "Total Tickets"}
+                  </span>
                   <span className="font-medium">{stats.totalTickets}</span>
                 </div>
                 <div className="flex justify-between text-sm">
