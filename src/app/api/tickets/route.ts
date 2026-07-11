@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    Object.assign(where, ticketScope(auth));
+    Object.assign(where, await ticketScope(auth));
 
     const [tickets, total] = await Promise.all([
       prisma.ticket.findMany({

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { applyRoleFixture } from "../setup";
 import {
   canAccessModule,
   conversationScope,
@@ -19,18 +20,19 @@ const viewer = { userId: "viewer-1", role: "viewer", userType: "member" as const
 describe("rbac-scope", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    applyRoleFixture();
   });
 
   describe("isUnscoped", () => {
-    it("owner, supervisor, and admin members are unscoped", () => {
-      expect(isUnscoped(owner)).toBe(true);
-      expect(isUnscoped(supervisor)).toBe(true);
-      expect(isUnscoped({ ...agent, role: "admin" })).toBe(true);
+    it("owner, supervisor, and admin members are unscoped", async () => {
+      expect(await isUnscoped(owner)).toBe(true);
+      expect(await isUnscoped(supervisor)).toBe(true);
+      expect(await isUnscoped({ ...agent, role: "admin" })).toBe(true);
     });
 
-    it("agents and viewers are scoped", () => {
-      expect(isUnscoped(agent)).toBe(false);
-      expect(isUnscoped(viewer)).toBe(false);
+    it("agents and viewers are scoped", async () => {
+      expect(await isUnscoped(agent)).toBe(false);
+      expect(await isUnscoped(viewer)).toBe(false);
     });
   });
 
@@ -85,14 +87,14 @@ describe("rbac-scope", () => {
   });
 
   describe("conversation and ticket scope", () => {
-    it("returns empty filter for unscoped users", () => {
-      expect(conversationScope(owner)).toEqual({});
-      expect(ticketScope(supervisor)).toEqual({});
+    it("returns empty filter for unscoped users", async () => {
+      expect(await conversationScope(owner)).toEqual({});
+      expect(await ticketScope(supervisor)).toEqual({});
     });
 
-    it("filters by assignedToId for scoped users", () => {
-      expect(conversationScope(agent)).toEqual({ assignedToId: "agent-1" });
-      expect(ticketScope(viewer)).toEqual({ assignedToId: "viewer-1" });
+    it("filters by assignedToId for scoped users", async () => {
+      expect(await conversationScope(agent)).toEqual({ assignedToId: "agent-1" });
+      expect(await ticketScope(viewer)).toEqual({ assignedToId: "viewer-1" });
     });
   });
 });

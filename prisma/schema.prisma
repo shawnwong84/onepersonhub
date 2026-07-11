@@ -233,6 +233,34 @@ model Department {
   updatedAt   DateTime     @updatedAt
 }
 
+// Roles referenced by TeamMember.rbacRole / Admin.role (plain strings, no FK -
+// matches this app's existing loose-coupling convention for role fields).
+// The 4 built-in roles (viewer/agent/supervisor/admin) are seeded by
+// migration and kept forever; isUnscoped replaces the old hardcoded
+// viewer<agent<supervisor<admin hierarchy check with an explicit flag so
+// custom roles don't need a position in a ladder that doesn't fit them.
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  label       String
+  isBuiltIn   Boolean          @default(false)
+  isUnscoped  Boolean          @default(false)
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model RolePermission {
+  id         String   @id @default(uuid())
+  roleId     String
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission String
+  createdAt  DateTime @default(now())
+
+  @@unique([roleId, permission])
+  @@index([roleId])
+}
+
 model TeamMember {
   id           String     @id @default(uuid())
   name         String

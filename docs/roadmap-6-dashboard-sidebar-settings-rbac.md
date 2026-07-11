@@ -68,11 +68,39 @@ Verified live at 1600px (vertical nav, all 7 sections visible, no scrolling) and
 
 ## Phase 4: RBAC — editable roles and permissions
 
-- [ ] Design a `Role` + `RolePermission` (or equivalent) schema so role→permission mapping moves from the hardcoded `PERMISSIONS` const in `src/lib/rbac.ts` into the database, with the 4 existing roles (viewer/agent/supervisor/admin) seeded as the default set.
-- [ ] Add custom role creation (name + permission set) on top of the 4 built-ins; built-ins likely stay non-deletable to avoid breaking `hasMinRole`'s hierarchy assumptions — needs a design decision during implementation on how custom roles interact with the existing role-hierarchy checks.
-- [ ] Make the role×permission table on `/team/permissions` editable (currently read-only display) — checkbox grid, save per role.
+Two decisions were confirmed with the user before touching this (security-critical, every-request-path) code: (1) cache roles/permissions in-process rather than querying the DB on every request, invalidated on edit; (2) replace the old `viewer < agent < supervisor < admin` hierarchy check with an explicit `isUnscoped` boolean per role, since custom roles don't have a natural position in a hierarchy.
+
+- [x] Design a `Role` + `RolePermission` (or equivalent) schema so role→permission mapping moves from the hardcoded `PERMISSIONS` const in `src/lib/rbac.ts` into the database, with the 4 existing roles (viewer/agent/supervisor/admin) seeded as the default set.
+
+  Added `Role` (`name`, `label`, `isBuiltIn`, `isUnscoped`) and `RolePermission` (`roleId`, `permission`, unique per pair) to `prisma/schema.prisma`. Migration `20260711034431_add_roles_permissions` creates both tables and seeds the 4 built-in roles with the *exact* 147 role-permission pairs the old hardcoded `PERMISSIONS` const held (generated programmatically from the const itself via a throwaway script, not hand-transcribed, and verified the count matched before writing the migration) — so authorization behavior is byte-identical immediately after migrating, before any admin touches the new UI.
+
+  `src/lib/rbac.ts` was rewritten: `DEFAULT_ROLE_PERMISSIONS` is now seed-only reference data (and the source of the `Permission` TypeScript type, which stays a static compile-time catalog — routes still call `requireAuth(request, "conversations:read")` with a literal checked at compile time; only which *roles* hold each permission is now editable, not the set of possible permissions). `hasPermission`/`getPermissionsForRole`/the new `isRoleUnscoped` all read from an in-process `Map` cache (`getRoleCache()`), populated from `prisma.role.findMany` on first use and invalidated (`invalidateRoleCache()`) by the new role-management endpoints on every write — matching the confirmed performance decision.
+
+  This made `hasPermission`/`isUnscoped`/`conversationScope`/`ticketScope` async where they were previously synchronous. Found and fixed all 14+ call sites across 7 files that needed an `await` added (`route-auth.ts`, `rbac-scope.ts` itself, `conversations/route.ts`, `conversations/[id]/route.ts`, `tickets/route.ts`, `tickets/[id]/route.ts`, `marketplace/modules/route.ts`, `modules/export/route.ts`, `modules/signals/route.ts`, and the dashboard page from Phase 1) — a missed `await` here would silently always evaluate a `Promise` object as truthy, which is a real security-bypass shape of bug, so every call site was grepped and checked individually rather than trusting the type checker alone (`Permission`-typed values would still typecheck against a stray un-awaited `Promise<boolean>` in a boolean position in some of these spots).
+
+- [x] Add custom role creation (name + permission set) on top of the 4 built-ins; built-ins likely stay non-deletable to avoid breaking `hasMinRole`'s hierarchy assumptions — needs a design decision during implementation on how custom roles interact with the existing role-hierarchy checks.
+
+  Resolved per the confirmed decision: `hasMinRole` (which had exactly one caller in the whole codebase — `isUnscoped`) is gone entirely, replaced by the `Role.isUnscoped` flag. `POST /api/team/permissions/roles` creates a custom role (name validated to lowercase-letters/numbers/hyphens, must be unique; starts with zero permissions, granted afterward from the matrix). `PUT /api/team/permissions/roles/[id]` edits label/isUnscoped/permissions for *any* role including built-ins (the review's "editable role × permission matrix" ask covers built-ins too - only `name` and `isBuiltIn` are immutable, since those are what other code paths key off of). `DELETE` blocks built-in roles and any custom role currently held by a `TeamMember` (would leave a dangling `rbacRole` string).
+
+- [x] Make the role×permission table on `/team/permissions` editable (currently read-only display) — checkbox grid, save per role.
+
+  Each permission cell is now a clickable toggle (✓/-) that PUTs the updated permission set immediately, matching the existing module-assignment matrix's click-to-cycle pattern on the same page. Added an "Unscoped" row (checkbox per role) and a "New role" modal. Delete (trash icon) shows only for custom roles. Fixed a latent bug found while wiring this up: "Full-access members" was hardcoded to `["supervisor", "admin"]` instead of reading `Role.isUnscoped` — a custom unscoped role's members wouldn't have shown up there.
+
 - [ ] Add department-scoped access as a new scoping dimension alongside the existing per-module assignment: an option to grant "see my department's conversations/tickets" rather than only individually-assigned ones.
-- [ ] Migration path: existing `TeamMember.role` string values must keep working unchanged; this is additive, not a breaking change to current role assignment.
+
+  Deliberately deferred, not attempted: this is a genuinely separate feature (a new scoping *dimension*, not part of making existing roles/permissions editable) layered on top of an already large, security-critical change to the authorization hot path. Given the async-conversion blast radius this phase already required, adding department scoping in the same pass risked under-testing both. Tracked here as explicit follow-up rather than silently dropped.
+
+- [x] Migration path: existing `TeamMember.role` string values must keep working unchanged; this is additive, not a breaking change to current role assignment.
+
+  `TeamMember.rbacRole` and `Admin.role` remain plain strings with no FK to `Role` (matching this app's existing loose-coupling convention for role fields) - no schema change needed on those models. The one place that validated `rbacRole` against a hardcoded role list (`team/members/[id]/credentials/route.ts`) now validates against the live `Role` table instead, so newly created custom roles are assignable immediately.
+
+Verified live against the running dev server (the highest-risk verification this session has done, since this touches every authenticated request):
+- Logged in as `admin` (unscoped) and the `e2e-agent` fixture (scoped) - conversations/tickets/permissions endpoints all returned correct data for both.
+- **Live cache-invalidation test**: as admin, `PUT`'d the agent role's permissions to remove `conversations:read`; the already-logged-in agent's next `GET /api/conversations` immediately returned 403 with no server restart; restored the permission and confirmed 200 again on the next request. This is the core risk of the whole phase (stale in-process cache after an edit) and it worked correctly.
+- Created a custom role via the API, confirmed a duplicate-name create correctly 400s, confirmed deleting a built-in role correctly 400s, then deleted the custom role (200, since unused) and confirmed the DB returned to exactly the 4 built-in roles with their original permission counts (147 total pairs, matching the pre-migration count).
+- Live UI check at 1600px, light and dark: module-assignment matrix, full-access members list, roles-and-permissions grid, and the New Role modal all render correctly with zero console errors.
+
+`tsc`/lint clean, full suite (408/408 - net -1 from Phase 1-3's 409 because the `hasMinRole` unit tests were removed along with the function itself, replaced by 3 `isRoleUnscoped` tests) passing. Also had to make the global Vitest Prisma mock (`tests/setup.ts`) return a role fixture matching the real migration's seed, since every scoped API route now depends on the role cache even in tests where auth itself is mocked - found and fixed a real interaction where several test files' own `vi.restoreAllMocks()` was wiping that fixture (documented in the test file itself).
 
 ## Verification approach (carried over from roadmap 5)
 

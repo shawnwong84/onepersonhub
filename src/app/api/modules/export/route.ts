@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     if (moduleSlug !== "all") {
       const denied = await requireModuleAccess(auth, moduleSlug, "read");
       if (denied) return denied;
-    } else if (!isUnscoped(auth)) {
+    } else if (!(await isUnscoped(auth))) {
       moduleWhere = { slug: { in: await getAccessibleModuleSlugs(auth) } };
     }
 

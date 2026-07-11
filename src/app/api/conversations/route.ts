@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    Object.assign(where, conversationScope(auth));
+    Object.assign(where, await conversationScope(auth));
 
     const [conversations, total] = await Promise.all([
       prisma.conversation.findMany({

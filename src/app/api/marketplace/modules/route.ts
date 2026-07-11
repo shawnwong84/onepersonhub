@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       },
     });
     const stateBySlug = new Map(installedRows.map((row) => [row.slug, row]));
-    const accessibleSlugs = isUnscoped(auth) ? null : new Set(await getAccessibleModuleSlugs(auth));
+    const accessibleSlugs = (await isUnscoped(auth)) ? null : new Set(await getAccessibleModuleSlugs(auth));
 
     const modules = MARKETPLACE_MODULES.filter(
       (module) => !accessibleSlugs || accessibleSlugs.has(module.slug)

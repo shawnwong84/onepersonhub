@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const signalType = searchParams.get("signalType");
 
     const where: Prisma.ModuleSignalWhereInput = {};
-    if (!isUnscoped(auth)) {
+    if (!(await isUnscoped(auth))) {
       const accessible = await getAccessibleModuleSlugs(auth);
       where.module = { slug: { in: accessible } };
     }

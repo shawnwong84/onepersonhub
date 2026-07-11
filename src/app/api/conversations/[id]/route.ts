@@ -50,7 +50,7 @@ export async function GET(
       );
     }
 
-    if (!isUnscoped(auth) && conversation.assignedToId !== auth.userId) {
+    if (!(await isUnscoped(auth)) && conversation.assignedToId !== auth.userId) {
       return NextResponse.json(
         { error: { code: "FORBIDDEN", message: "This conversation is not assigned to you." } },
         { status: 403 }
@@ -111,7 +111,7 @@ export async function PUT(
       );
     }
 
-    if (!isUnscoped(auth) && existing.assignedToId !== auth.userId) {
+    if (!(await isUnscoped(auth)) && existing.assignedToId !== auth.userId) {
       return NextResponse.json(
         { error: { code: "FORBIDDEN", message: "This conversation is not assigned to you." } },
         { status: 403 }

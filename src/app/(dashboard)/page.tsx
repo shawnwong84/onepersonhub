@@ -51,8 +51,8 @@ function computeRateTrend(currentRate: number, previousRate: number): Trend {
 }
 
 async function getStats(user: ScopedUser) {
-  const scoped = conversationScope(user);
-  const ticketScoped = ticketScope(user);
+  const scoped = await conversationScope(user);
+  const ticketScoped = await ticketScope(user);
   const now = new Date();
   const periodStart = new Date(now.getTime() - TREND_WINDOW_MS);
   const prevPeriodStart = new Date(now.getTime() - 2 * TREND_WINDOW_MS);
@@ -78,7 +78,7 @@ async function getStats(user: ScopedUser) {
     prisma.conversation.count({ where: { ...scoped, status: "active" } }),
     prisma.ticket.count({ where: ticketScoped }),
     prisma.ticket.count({ where: { ...ticketScoped, status: "open" } }),
-    isUnscoped(user)
+    (await isUnscoped(user))
       ? prisma.message.count()
       : prisma.message.count({ where: { conversation: scoped } }),
     prisma.conversation.findMany({
@@ -188,7 +188,7 @@ export default async function DashboardPage() {
     role: currentUser.role,
     userType: currentUser.userType,
   };
-  const scoped = !isUnscoped(scopedUser);
+  const scoped = !(await isUnscoped(scopedUser));
 
   const stats = await getStats(scopedUser);
   const channelStatusByType = new Map(

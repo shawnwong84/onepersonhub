@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { applyRoleFixture } from "../setup";
 import { createRequest, parseJsonResponse } from "../helpers/request";
 import { fixtures } from "../helpers/fixtures";
 
@@ -8,6 +9,7 @@ const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType
 describe("GET /api/tickets", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    applyRoleFixture();
   });
 
   it("should return list of tickets", async () => {
@@ -80,6 +82,7 @@ describe("GET /api/tickets", () => {
 describe("POST /api/tickets", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    applyRoleFixture();
   });
 
   it("should create a ticket with valid data", async () => {

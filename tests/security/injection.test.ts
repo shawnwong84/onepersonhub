@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { applyRoleFixture } from "../setup";
 import { createRequest, parseJsonResponse } from "../helpers/request";
 import { escapeHtml, sanitizeEmailSubject } from "@/lib/security";
 
@@ -8,6 +9,7 @@ const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType
 describe("Injection Attack Prevention", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    applyRoleFixture();
   });
 
   describe("XSS Prevention", () => {

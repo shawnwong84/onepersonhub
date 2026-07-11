@@ -66,7 +66,7 @@ export async function requireAuth(
       );
     }
 
-    if (permission && !hasPermission(context.role, permission)) {
+    if (permission && !(await hasPermission(context.role, permission))) {
       return NextResponse.json(
         { error: { code: "FORBIDDEN", message: "Insufficient permissions" } },
         { status: 403 }
@@ -118,7 +118,7 @@ export async function requireAuth(
     }
 
     // Check against the live role so role changes apply without re-login.
-    if (permission && !hasPermission(member.rbacRole, permission)) {
+    if (permission && !(await hasPermission(member.rbacRole, permission))) {
       return NextResponse.json(
         { error: { code: "FORBIDDEN", message: "Insufficient permissions" } },
         { status: 403 }
@@ -135,7 +135,7 @@ export async function requireAuth(
     };
   }
 
-  if (permission && !hasPermission(payload.role, permission)) {
+  if (permission && !(await hasPermission(payload.role, permission))) {
     return NextResponse.json(
       { error: { code: "FORBIDDEN", message: "Insufficient permissions" } },
       { status: 403 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { hasMinRole } from "@/lib/rbac";
+import { isRoleUnscoped } from "@/lib/rbac";
 import { CORE_MODULE_SLUGS, MARKETPLACE_MODULES } from "@/lib/marketplace/catalog";
 
 export interface ScopedUser {
@@ -10,18 +10,20 @@ export interface ScopedUser {
 }
 
 /**
- * Supervisors, admins, the owner account, and API keys see everything.
- * Agents and viewers are scoped to their assignments.
+ * The owner account and API keys (role "admin") see everything. Other roles
+ * are unscoped based on their Role.isUnscoped flag (editable via the
+ * permissions UI) - supervisor/admin default to true, viewer/agent to
+ * false, matching the behavior of the old hardcoded hierarchy check.
  */
-export function isUnscoped(user: ScopedUser): boolean {
-  return user.userType === "owner" || hasMinRole(user.role, "supervisor");
+export async function isUnscoped(user: ScopedUser): Promise<boolean> {
+  return user.userType === "owner" || (await isRoleUnscoped(user.role));
 }
 
 /**
  * Module slugs this user may read. Core modules are readable by everyone.
  */
 export async function getAccessibleModuleSlugs(user: ScopedUser): Promise<string[]> {
-  if (isUnscoped(user)) {
+  if (await isUnscoped(user)) {
     return MARKETPLACE_MODULES.map((module) => module.slug);
   }
   const assignments = await prisma.moduleAssignment.findMany({
@@ -42,7 +44,7 @@ export async function canAccessModule(
   moduleSlug: string,
   level: "read" | "write" = "read"
 ): Promise<boolean> {
-  if (isUnscoped(user)) return true;
+  if (await isUnscoped(user)) return true;
 
   const assignment = await prisma.moduleAssignment.findUnique({
     where: { teamMemberId_moduleSlug: { teamMemberId: user.userId, moduleSlug } },
@@ -100,13 +102,13 @@ export async function requireModuleAccess(
 /**
  * Prisma where fragment limiting conversations to the user's own assignments.
  */
-export function conversationScope(user: ScopedUser): { assignedToId?: string } {
-  return isUnscoped(user) ? {} : { assignedToId: user.userId };
+export async function conversationScope(user: ScopedUser): Promise<{ assignedToId?: string }> {
+  return (await isUnscoped(user)) ? {} : { assignedToId: user.userId };
 }
 
 /**
  * Prisma where fragment limiting tickets to the user's own assignments.
  */
-export function ticketScope(user: ScopedUser): { assignedToId?: string } {
-  return isUnscoped(user) ? {} : { assignedToId: user.userId };
+export async function ticketScope(user: ScopedUser): Promise<{ assignedToId?: string }> {
+  return (await isUnscoped(user)) ? {} : { assignedToId: user.userId };
 }

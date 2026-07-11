@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { hashPassword } from "@/lib/auth";
-import { ROLES } from "@/lib/rbac";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 // POST /api/team/members/[id]/credentials - issue or update login credentials
@@ -29,11 +28,15 @@ export async function POST(
       return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
 
-    if (rbacRole !== undefined && !ROLES.includes(rbacRole as (typeof ROLES)[number])) {
-      return NextResponse.json(
-        { error: `rbacRole must be one of: ${ROLES.join(", ")}` },
-        { status: 400 }
-      );
+    if (rbacRole !== undefined) {
+      const roleExists = await prisma.role.findUnique({ where: { name: rbacRole } });
+      if (!roleExists) {
+        const validRoles = await prisma.role.findMany({ select: { name: true } });
+        return NextResponse.json(
+          { error: `rbacRole must be one of: ${validRoles.map((r) => r.name).join(", ")}` },
+          { status: 400 }
+        );
+      }
     }
 
     if (password !== undefined && password.length < 8) {

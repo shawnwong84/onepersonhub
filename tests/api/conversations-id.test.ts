@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { applyRoleFixture } from "../setup";
 import { requireAuth } from "@/lib/route-auth";
 import { createRequest } from "../helpers/request";
 import { fixtures } from "../helpers/fixtures";
@@ -10,6 +11,7 @@ const mockRequireAuth = vi.mocked(requireAuth);
 describe("PUT /api/conversations/[id]", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    applyRoleFixture();
   });
 
   it("rejects an update from a scoped agent when the conversation is assigned to someone else", async () => {

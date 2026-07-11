@@ -3,15 +3,17 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { CORE_MODULE_SLUGS, MARKETPLACE_MODULES } from "@/lib/marketplace/catalog";
-import { PERMISSIONS, ROLES } from "@/lib/rbac";
+import { ALL_PERMISSIONS } from "@/lib/rbac";
 
-// GET /api/team/permissions - the full member x module assignment matrix
+// GET /api/team/permissions - the full member x module assignment matrix,
+// plus the role x permission matrix (now DB-backed and editable via
+// /api/team/permissions/roles).
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request, "team:read");
   if (!isAuthenticated(auth)) return auth;
 
   try {
-    const [members, assignments, installedModules] = await Promise.all([
+    const [members, assignments, installedModules, roles] = await Promise.all([
       prisma.teamMember.findMany({
         orderBy: { name: "asc" },
         select: {
@@ -27,6 +29,10 @@ export async function GET(request: NextRequest) {
       prisma.businessModule.findMany({
         where: { isInstalled: true },
         select: { slug: true },
+      }),
+      prisma.role.findMany({
+        orderBy: { createdAt: "asc" },
+        include: { permissions: { select: { permission: true } } },
       }),
     ]);
 
@@ -47,8 +53,15 @@ export async function GET(request: NextRequest) {
         moduleSlug: a.moduleSlug,
         access: a.access,
       })),
-      roles: ROLES,
-      rolePermissions: PERMISSIONS,
+      roles: roles.map((role) => ({
+        id: role.id,
+        name: role.name,
+        label: role.label,
+        isBuiltIn: role.isBuiltIn,
+        isUnscoped: role.isUnscoped,
+        permissions: role.permissions.map((p) => p.permission),
+      })),
+      allPermissions: ALL_PERMISSIONS,
       coreModules: CORE_MODULE_SLUGS,
     });
   } catch (error) {
