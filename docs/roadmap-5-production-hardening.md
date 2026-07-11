@@ -244,7 +244,17 @@ Page work:
   There's no `unread`/`lastReadAt` column on `Conversation` in the schema — rather than add one (a bigger, riskier schema + read-tracking feature), the review's "unread weight" ask was implemented as a genuine business-meaning proxy instead: bold when a thread is active and awaiting a reply from us, not a fake read/unread flag.
 
   Verified live at 1600px and 375px, light and dark: avatars render with correct deterministic colors and initials, channel badges match the row's channel, the assignee chip shows correctly for an assigned conversation, opening a conversation into the detail pane still works (also migrated its header icon off the same local color map), and mobile has no overflow issues. `tsc`/lint clean, full suite (409/409) passing.
-- [ ] Tickets table: de-emphasize repeated defaults, bulk select + assign, visible pagination.
+- [x] Tickets table: de-emphasize repeated defaults, bulk select + assign, visible pagination.
+
+  The API (`src/app/api/tickets/route.ts`) already supported `page`/`limit` via the shared `parsePagination`/`paginatedResponse` helpers, and a fully-built `Pagination` component already existed in `src/components/ui/pagination.tsx` — both unused by this page, which fetched every matching ticket at once with no `take` limit. Wired both up: added `page` state (reset to 1 on any filter change) and rendered `Pagination` below the table.
+
+  Bulk select + assign: checkbox column (header select-all + per-row, `stopPropagation`'d so it doesn't also open the detail panel), a bulk action bar that appears once anything's selected with an "Assign to..." dropdown (sourced from `/api/team/members`) and an "Unassign" option, firing `Promise.all` of per-ticket `PUT` calls (no dedicated bulk-assign endpoint exists yet, consistent with how the flow-priority reorder feature did multi-record updates earlier in this roadmap).
+
+  De-emphasized the dominant default: `"open"` is the status every ticket starts in, so a loud colored pill on every single row was pure noise - it now renders as plain muted text with just the status icon, while every other status (`in_progress`/`resolved`/`closed`, and all priorities) keeps its colored pill since those are the states worth an eye being drawn to.
+
+  Found and fixed a real bug uncovered while wiring pagination: the "Open"/"In Progress"/"Resolved" stat cards were computed by filtering the already-paginated `tickets` array client-side - correct only by accident when everything fit on one page. Added a `fetchStatusCounts` call (three parallel `GET /api/tickets?status=X&limit=1` requests reading `pagination.total`, respecting the same priority/department/search filters) so the stat cards reflect the true filtered total regardless of which page is showing.
+
+  Verified live: bulk-selected 2 tickets, assigned to a real team member, confirmed a 200 response and the "Assigned To" column updating, then reverted the test mutation; paginated to page 2 and confirmed different tickets loaded ("Showing 1-20 of 32"); dark mode has no artifacts. `tsc`/lint clean, full suite (409/409) passing.
 - [ ] Settings: cap form width (~560px), scrollable tab bar with fade affordance, sticky save bar.
 - [ ] Sidebar IA: merge Insights into System, collapsible sections, Modules pinned higher.
 

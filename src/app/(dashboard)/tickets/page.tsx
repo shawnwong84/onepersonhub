@@ -22,6 +22,7 @@ import {
   getPriorityColor,
 } from "@/lib/utils";
 import { unwrapListResponse } from "@/lib/api-response";
+import { Pagination } from "@/components/ui/pagination";
 
 interface TicketData {
   id: string;
@@ -57,6 +58,11 @@ interface DepartmentData {
   name: string;
 }
 
+interface TeamMemberData {
+  id: string;
+  name: string;
+}
+
 const ticketStatuses = [
   { value: "all", label: "All Status" },
   { value: "open", label: "Open" },
@@ -87,9 +93,14 @@ const priorityLabels: Record<string, string> = {
   urgent: "Urgent",
 };
 
+const TICKETS_PER_PAGE = 20;
+
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<TicketData[]>([]);
+  const [totalTickets, setTotalTickets] = useState(0);
+  const [page, setPage] = useState(1);
   const [departments, setDepartments] = useState<DepartmentData[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMemberData[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
@@ -98,6 +109,9 @@ export default function TicketsPage() {
   const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [statusCounts, setStatusCounts] = useState({ open: 0, inProgress: 0, resolved: 0 });
 
   // Create form state
   const [createForm, setCreateForm] = useState({
@@ -116,18 +130,23 @@ export default function TicketsPage() {
       if (departmentFilter !== "all")
         params.set("departmentId", departmentFilter);
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
+      params.set("page", String(page));
+      params.set("limit", String(TICKETS_PER_PAGE));
 
       const res = await fetch(`/api/tickets?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setTickets(unwrapListResponse<TicketData>(data));
+        setTotalTickets(
+          typeof data?.pagination?.total === "number" ? data.pagination.total : 0
+        );
       }
     } catch (error) {
       console.error("Failed to fetch tickets:", error);
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, priorityFilter, departmentFilter, searchQuery]);
+  }, [statusFilter, priorityFilter, departmentFilter, searchQuery, page]);
 
   const fetchDepartments = useCallback(async () => {
     try {
@@ -141,9 +160,65 @@ export default function TicketsPage() {
     }
   }, []);
 
+  const fetchTeamMembers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/team/members?limit=100");
+      if (res.ok) {
+        const data = await res.json();
+        setTeamMembers(unwrapListResponse<TeamMemberData>(data));
+      }
+    } catch (error) {
+      console.error("Failed to fetch team members:", error);
+    }
+  }, []);
+
+  const fetchStatusCounts = useCallback(async () => {
+    try {
+      const baseParams = new URLSearchParams();
+      if (priorityFilter !== "all") baseParams.set("priority", priorityFilter);
+      if (departmentFilter !== "all") baseParams.set("departmentId", departmentFilter);
+      if (searchQuery.trim()) baseParams.set("search", searchQuery.trim());
+      baseParams.set("limit", "1");
+
+      const countFor = async (status: string) => {
+        const params = new URLSearchParams(baseParams);
+        params.set("status", status);
+        const res = await fetch(`/api/tickets?${params.toString()}`);
+        if (!res.ok) return 0;
+        const data = await res.json();
+        return typeof data?.pagination?.total === "number" ? data.pagination.total : 0;
+      };
+
+      const [open, inProgress, resolved] = await Promise.all([
+        countFor("open"),
+        countFor("in_progress"),
+        countFor("resolved"),
+      ]);
+      setStatusCounts({ open, inProgress, resolved });
+    } catch (error) {
+      console.error("Failed to fetch ticket status counts:", error);
+    }
+  }, [priorityFilter, departmentFilter, searchQuery]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, priorityFilter, departmentFilter, searchQuery]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [tickets]);
+
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
+
+  useEffect(() => {
+    fetchStatusCounts();
+  }, [fetchStatusCounts]);
+
+  useEffect(() => {
+    fetchTeamMembers();
+  }, [fetchTeamMembers]);
 
   useEffect(() => {
     fetchDepartments();
@@ -211,11 +286,42 @@ export default function TicketsPage() {
     }
   };
 
-  const openCount = tickets.filter((t) => t.status === "open").length;
-  const inProgressCount = tickets.filter(
-    (t) => t.status === "in_progress"
-  ).length;
-  const resolvedCount = tickets.filter((t) => t.status === "resolved").length;
+  const handleBulkAssign = async (assignedToId: string) => {
+    if (selectedIds.size === 0) return;
+    setBulkAssigning(true);
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map((id) =>
+          fetch(`/api/tickets/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ assignedToId: assignedToId || null }),
+          })
+        )
+      );
+      setSelectedIds(new Set());
+      fetchTickets();
+    } catch (error) {
+      console.error("Failed to bulk-assign tickets:", error);
+    } finally {
+      setBulkAssigning(false);
+    }
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((current) =>
+      current.size === tickets.length ? new Set() : new Set(tickets.map((t) => t.id))
+    );
+  };
 
   return (
     <>
@@ -243,7 +349,7 @@ export default function TicketsPage() {
             <div>
               <p className="text-xs text-owly-text-light">Open</p>
               <p className="text-lg font-semibold text-owly-text">
-                {openCount}
+                {statusCounts.open}
               </p>
             </div>
           </div>
@@ -254,7 +360,7 @@ export default function TicketsPage() {
             <div>
               <p className="text-xs text-owly-text-light">In Progress</p>
               <p className="text-lg font-semibold text-owly-text">
-                {inProgressCount}
+                {statusCounts.inProgress}
               </p>
             </div>
           </div>
@@ -265,7 +371,7 @@ export default function TicketsPage() {
             <div>
               <p className="text-xs text-owly-text-light">Resolved</p>
               <p className="text-lg font-semibold text-owly-text">
-                {resolvedCount}
+                {statusCounts.resolved}
               </p>
             </div>
           </div>
@@ -321,6 +427,41 @@ export default function TicketsPage() {
           </div>
         </div>
 
+        {/* Bulk action bar */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 rounded-xl border border-owly-primary/30 bg-owly-primary-50 px-4 py-2.5">
+            <span className="text-sm font-medium text-owly-primary-dark">
+              {selectedIds.size} selected
+            </span>
+            <select
+              disabled={bulkAssigning}
+              onChange={(e) => {
+                if (e.target.value === "") return;
+                handleBulkAssign(e.target.value === "unassign" ? "" : e.target.value);
+                e.target.value = "";
+              }}
+              defaultValue=""
+              className="text-sm px-3 py-1.5 border border-owly-border rounded-lg bg-owly-surface focus:outline-none focus:ring-2 focus:ring-owly-primary/30 text-owly-text disabled:opacity-50"
+            >
+              <option value="" disabled>
+                {bulkAssigning ? "Assigning..." : "Assign to..."}
+              </option>
+              <option value="unassign">Unassign</option>
+              {teamMembers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="ml-auto text-sm text-owly-text-light hover:text-owly-text transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Tickets Table */}
         <div className="bg-owly-surface rounded-xl border border-owly-border overflow-hidden">
           {loading ? (
@@ -349,6 +490,15 @@ export default function TicketsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-owly-border bg-owly-bg/50">
+                    <th className="w-10 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size === tickets.length}
+                        onChange={toggleSelectAll}
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded border-owly-border accent-owly-primary"
+                      />
+                    </th>
                     <th className="text-left px-4 py-3 text-xs font-medium text-owly-text-light uppercase tracking-wider">
                       Ticket
                     </th>
@@ -373,13 +523,29 @@ export default function TicketsPage() {
                   {tickets.map((ticket) => {
                     const StatusIcon =
                       statusIcons[ticket.status] || CircleDot;
+                    // "open" is the default status every ticket starts in -
+                    // a loud colored pill on every row for the expected case
+                    // is just noise. Reserve pills for states worth noticing.
+                    const isDefaultStatus = ticket.status === "open";
 
                     return (
                       <tr
                         key={ticket.id}
                         onClick={() => setSelectedTicket(ticket)}
-                        className="hover:bg-owly-primary-50/50 cursor-pointer transition-colors"
+                        className={cn(
+                          "hover:bg-owly-primary-50/50 cursor-pointer transition-colors",
+                          selectedIds.has(ticket.id) && "bg-owly-primary-50/40"
+                        )}
                       >
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(ticket.id)}
+                            onChange={() => toggleSelected(ticket.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="rounded border-owly-border accent-owly-primary"
+                          />
+                        </td>
                         <td className="px-4 py-3">
                           <div className="flex items-start gap-3">
                             <div className="min-w-0">
@@ -395,15 +561,22 @@ export default function TicketsPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span
-                            className={cn(
-                              "px-2 py-0.5 rounded-full text-xs font-medium inline-flex items-center gap-1",
-                              getStatusColor(ticket.status)
-                            )}
-                          >
-                            <StatusIcon className="h-3 w-3" />
-                            {ticket.status.replace("_", " ")}
-                          </span>
+                          {isDefaultStatus ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-owly-text-light">
+                              <StatusIcon className="h-3 w-3" />
+                              open
+                            </span>
+                          ) : (
+                            <span
+                              className={cn(
+                                "px-2 py-0.5 rounded-full text-xs font-medium inline-flex items-center gap-1",
+                                getStatusColor(ticket.status)
+                              )}
+                            >
+                              <StatusIcon className="h-3 w-3" />
+                              {ticket.status.replace("_", " ")}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -438,6 +611,16 @@ export default function TicketsPage() {
             </div>
           )}
         </div>
+
+        {!loading && totalTickets > 0 && (
+          <Pagination
+            currentPage={page}
+            totalItems={totalTickets}
+            itemsPerPage={TICKETS_PER_PAGE}
+            onPageChange={setPage}
+            className="px-1"
+          />
+        )}
       </div>
 
       {/* Ticket Detail Panel */}
