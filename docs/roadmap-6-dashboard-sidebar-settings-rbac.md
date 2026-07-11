@@ -28,10 +28,23 @@ Scope agreed with the user 2026-07-11: role-aware dashboard with trends, sidebar
 
 ## Phase 2: Sidebar — collapse/expand polish
 
-- [ ] Persist the whole-sidebar icon-only `collapsed` state to `localStorage` (mirrors the per-section collapse persistence added last session; currently resets on every reload).
-- [ ] Add a responsive fallback below the `lg` breakpoint — sidebar is currently `hidden lg:flex` with no drawer/hamburger, so tablet-width users (768–1024px) have no sidebar navigation at all. Add a slide-over drawer triggered from the header, reusing `MobileNav`'s pattern where sensible.
-- [ ] Keyboard accessibility: `aria-expanded`/`aria-controls` on section toggle buttons and the whole-sidebar collapse button, visible focus rings, and confirm items are reachable via Tab.
-- [ ] Hover flyout tooltips in icon-only mode (proper positioned tooltip, not just the native `title` attribute's slow browser tooltip).
+- [x] Persist the whole-sidebar icon-only `collapsed` state to `localStorage` (mirrors the per-section collapse persistence added last session; currently resets on every reload).
+
+  Added a second `localStorage` key (`owly-sidebar-collapsed`) alongside the existing per-section one, read on mount and written on every toggle. Verified live: collapsed the sidebar to icon-only, reloaded the page, and it stayed collapsed (`<aside>` width measured 64px post-reload).
+
+- [x] ~~Add a responsive fallback below the `lg` breakpoint~~ — **correction, not a real gap**: initial research for this roadmap claimed tablet-width users (768–1024px) had no navigation. Re-verified directly before building anything: `Sidebar` is `hidden lg:flex` and `MobileNav` is `lg:hidden` — these are exact complements of the same breakpoint, not a gap. Confirmed live at 900px width: the desktop sidebar is correctly absent and `MobileNav`'s bottom tab bar + "More" sheet (which already lists every `NAV_SECTIONS` item plus installed modules) is fully present and functional. No drawer was built; this item is struck through rather than silently dropped, since the roadmap explicitly called for it.
+
+- [x] Keyboard accessibility: `aria-expanded`/`aria-controls` on section toggle buttons and the whole-sidebar collapse button, visible focus rings, and confirm items are reachable via Tab.
+
+  Added `aria-expanded`/`aria-controls` (pointing at an `id` on the section's item list) to each section-collapse button, `aria-expanded`/`aria-label` to the whole-sidebar collapse button, and applied the app's existing `.focus-ring` utility class (already defined in `globals.css`, previously unused in the sidebar) to every interactive element so keyboard focus is visible against the dark sidebar background instead of relying on the browser's inconsistent default outline. Verified `aria-expanded` flips `true`/`false` correctly on click via a live DOM check.
+
+- [x] Hover flyout tooltips in icon-only mode (proper positioned tooltip, not just the native `title` attribute's slow browser tooltip).
+
+  First implementation used a CSS-only `group-hover` tooltip absolutely positioned off the icon — looked right in isolation, but a live check caught a real bug: the computed `opacity` was `1` and position was correct, yet the tooltip was invisible in an actual screenshot. Root cause: the `<nav>` has `overflow-y-auto` for scrolling, and per the CSS spec an element can't have `overflow-x: visible` paired with a non-visible `overflow-y` — the browser silently forces both axes non-visible, clipping the horizontally-overflowing absolutely-positioned tooltip even though its own styles were "correct." Fixed by portaling the tooltip to `document.body` (`createPortal`), computed from `getBoundingClientRect()` on hover/focus, entirely outside the scrolling container's clipping. Also wired to `onFocus`/`onBlur` (not just mouse hover) so it's reachable via keyboard, not just a pointer.
+
+  Verified live, light and dark: hovering a collapsed-sidebar icon now shows a correctly positioned, unclipped tooltip immediately next to it.
+
+Verified throughout: `tsc`/lint clean, full suite (409/409) passing, live checks at 1600px and 900px, light and dark, zero console errors.
 
 ## Phase 3: Settings — navigation redesign
 

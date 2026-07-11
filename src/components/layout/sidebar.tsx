@@ -31,9 +31,11 @@ import {
   Store,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { getModuleIcon } from "@/lib/marketplace/icon-map";
 
 const COLLAPSED_SECTIONS_KEY = "owly-sidebar-collapsed-sections";
+const COLLAPSED_KEY = "owly-sidebar-collapsed";
 
 export interface NavSection {
   title?: string;
@@ -102,13 +104,22 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [installedModules, setInstalledModules] = useState<InstalledModule[]>([]);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  // Icon-only mode tooltips are portaled to <body> instead of rendered
+  // inline: the nav list scrolls (overflow-y-auto), and per the CSS spec an
+  // element can't have overflow-x: visible alongside overflow-y: auto - the
+  // browser silently forces both axes non-visible, clipping an absolutely
+  // positioned tooltip even though its own opacity/position are correct.
+  const [hoveredTooltip, setHoveredTooltip] = useState<{ name: string; top: number; left: number } | null>(
+    null
+  );
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
       if (stored) setCollapsedSections(JSON.parse(stored));
+      setCollapsed(localStorage.getItem(COLLAPSED_KEY) === "1");
     } catch {
-      // Ignore malformed/inaccessible storage - sections just start expanded.
+      // Ignore malformed/inaccessible storage - sidebar just starts expanded.
     }
   }, []);
 
@@ -117,6 +128,19 @@ export function Sidebar() {
       const next = { ...current, [title]: !current[title] };
       try {
         localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(next));
+      } catch {
+        // Non-fatal - the toggle still works for this session.
+      }
+      return next;
+    });
+  };
+
+  const toggleCollapsed = () => {
+    setHoveredTooltip(null);
+    setCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
       } catch {
         // Non-fatal - the toggle still works for this session.
       }
@@ -182,13 +206,16 @@ export function Sidebar() {
           // title to click to re-expand a section in that mode).
           const isSectionCollapsed =
             !collapsed && section.title ? !!collapsedSections[section.title] : false;
+          const sectionPanelId = section.title ? `sidebar-section-${section.title}` : undefined;
 
           return (
           <div key={si}>
             {section.title && !collapsed && (
               <button
                 onClick={() => toggleSection(section.title as string)}
-                className="flex w-full items-center justify-between px-3 mb-1 text-[10px] uppercase tracking-wider text-white/40 font-medium hover:text-white/70 transition-colors"
+                aria-expanded={!isSectionCollapsed}
+                aria-controls={sectionPanelId}
+                className="focus-ring flex w-full items-center justify-between rounded px-3 mb-1 text-[10px] uppercase tracking-wider text-white/40 font-medium hover:text-white/70 transition-colors"
               >
                 {section.title}
                 <ChevronDown
@@ -203,7 +230,7 @@ export function Sidebar() {
               <div className="mx-3 mb-2 border-t border-white/10" />
             )}
             {!isSectionCollapsed && (
-              <div className="space-y-0.5">
+              <div id={sectionPanelId} className="space-y-0.5">
                 {section.items.map((item) => {
                   const isActive =
                     pathname === item.href ||
@@ -214,13 +241,38 @@ export function Sidebar() {
                       key={item.name}
                       href={item.href}
                       prefetch={false}
+                      onMouseEnter={
+                        collapsed
+                          ? (e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setHoveredTooltip({
+                                name: item.name,
+                                top: rect.top + rect.height / 2,
+                                left: rect.right + 8,
+                              });
+                            }
+                          : undefined
+                      }
+                      onMouseLeave={collapsed ? () => setHoveredTooltip(null) : undefined}
+                      onFocus={
+                        collapsed
+                          ? (e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setHoveredTooltip({
+                                name: item.name,
+                                top: rect.top + rect.height / 2,
+                                left: rect.right + 8,
+                              });
+                            }
+                          : undefined
+                      }
+                      onBlur={collapsed ? () => setHoveredTooltip(null) : undefined}
                       className={cn(
-                        "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors",
+                        "focus-ring flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-colors",
                         isActive
                           ? "bg-owly-sidebar-active text-white"
                           : "text-white/65 hover:bg-owly-sidebar-hover hover:text-white"
                       )}
-                      title={collapsed ? item.name : undefined}
                     >
                       <item.icon className="h-4 w-4 flex-shrink-0" />
                       {!collapsed && <span>{item.name}</span>}
@@ -236,8 +288,10 @@ export function Sidebar() {
 
       <div className="px-2 py-2 border-t border-white/10">
         <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center justify-center w-full py-1.5 rounded-md text-white/40 hover:text-white hover:bg-owly-sidebar-hover transition-colors"
+          onClick={toggleCollapsed}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="focus-ring flex items-center justify-center w-full py-1.5 rounded-md text-white/40 hover:text-white hover:bg-owly-sidebar-hover transition-colors"
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -246,6 +300,18 @@ export function Sidebar() {
           )}
         </button>
       </div>
+
+      {hoveredTooltip &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <span
+            className="pointer-events-none fixed z-50 -translate-y-1/2 whitespace-nowrap rounded-md border border-white/10 bg-owly-sidebar-hover px-2 py-1 text-xs font-medium text-white shadow-lg"
+            style={{ top: hoveredTooltip.top, left: hoveredTooltip.left }}
+          >
+            {hoveredTooltip.name}
+          </span>,
+          document.body
+        )}
     </aside>
   );
 }
