@@ -48,10 +48,23 @@ Verified throughout: `tsc`/lint clean, full suite (409/409) passing, live checks
 
 ## Phase 3: Settings — navigation redesign
 
-- [ ] Replace the horizontal, overflow-scrolling tab bar with a vertical sidebar-style section nav (matches Slack/Linear/Notion settings patterns) — same 7 sections (General, AI, Voice, Phone, Email, WhatsApp, Automation), same field content, no functional changes to what's saved.
-- [ ] Keep the 560px form-width cap and sticky save bar from the last pass; adapt the sticky save bar's positioning to the new layout.
-- [ ] Responsive behavior: vertical nav collapses to a dropdown or top tab strip below a chosen breakpoint (settings page needs to stay usable at 375px).
-- [ ] No content/tab additions in this pass — purely the navigation pattern, as scoped.
+- [x] Replace the horizontal, overflow-scrolling tab bar with a vertical sidebar-style section nav (matches Slack/Linear/Notion settings patterns) — same 7 sections (General, AI, Voice, Phone, Email, WhatsApp, Automation), same field content, no functional changes to what's saved.
+
+  `src/app/(dashboard)/settings/page.tsx`'s layout is now a two-column `md:flex` row: a 224px (`w-56`) vertical nav on the left listing all 7 sections (no scrolling needed — they all fit, unlike the old horizontal bar which needed the fade-affordance workaround from the last pass), and the form content on the right. No changes to `sectionFields`, `sectionRenderers`, the API calls, or any field — purely the navigation chrome.
+
+- [x] Keep the 560px form-width cap and sticky save bar from the last pass; adapt the sticky save bar's positioning to the new layout.
+
+  Both preserved unchanged in behavior — the `max-w-[560px]` cap and `sticky bottom-0` save bar just moved from being direct children of the single centered column to children of the new right-hand content column, so they still cap/stick correctly within the two-column layout.
+
+- [x] Responsive behavior: vertical nav collapses to a dropdown or top tab strip below a chosen breakpoint (settings page needs to stay usable at 375px).
+
+  Chose a `<select>` dropdown over a top tab strip below `md`: a 7-item horizontal strip would have reintroduced the exact overflow/truncation problem fixed last pass, while a native select is a single compact, fully-accessible control that needs no scroll affordance at all. Bound to the same `activeTab` state as the desktop nav.
+
+- [x] No content/tab additions in this pass — purely the navigation pattern, as scoped.
+
+  Confirmed no field/tab content changed — diff is scoped to the nav/layout JSX only.
+
+Verified live at 1600px (vertical nav, all 7 sections visible, no scrolling) and 375px (dropdown correctly switches sections, e.g. to Email), light and dark, zero console errors. `tsc`/lint clean, full suite (409/409) passing.
 
 ## Phase 4: RBAC — editable roles and permissions
 
