@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { cn, formatRelativeTime } from "@/lib/utils";
+import { getPriorityHex, getStatusHex, getChannelHex } from "@/lib/status-colors";
 
 // ==================== TYPES ====================
 
@@ -64,29 +65,6 @@ const PERIOD_OPTIONS: { label: string; value: Period }[] = [
   { label: "30 days", value: "30d" },
   { label: "90 days", value: "90d" },
 ];
-
-const PRIORITY_COLORS: Record<string, string> = {
-  low: "#64748B",
-  medium: "#F59E0B",
-  high: "#C4956A",
-  urgent: "#EF4444",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  open: "#F59E0B",
-  in_progress: "#4A7C9B",
-  resolved: "#22C55E",
-  closed: "#64748B",
-  escalated: "#EF4444",
-};
-
-const CHANNEL_COLORS: Record<string, string> = {
-  whatsapp: "#22C55E",
-  email: "#4A7C9B",
-  phone: "#C4956A",
-  web: "#8B5CF6",
-  chat: "#A8D0E6",
-};
 
 // ==================== SKELETON ====================
 
@@ -236,7 +214,7 @@ export default function AnalyticsPage() {
           />
           <StatCard
             title="Resolution Rate"
-            value={`${data.resolutionRate}%`}
+            value={data.totalConversations === 0 ? "No data yet" : `${data.resolutionRate}%`}
             icon={CheckCircle2}
             iconColor="bg-green-50 text-green-600"
           />
@@ -245,7 +223,7 @@ export default function AnalyticsPage() {
             value={
               data.satisfactionAvg > 0
                 ? `${data.satisfactionAvg} / 5`
-                : "--"
+                : "No ratings yet"
             }
             icon={Star}
             iconColor="bg-purple-50 text-purple-600"
@@ -275,7 +253,7 @@ export default function AnalyticsPage() {
             data={data.channelBreakdown.map((d) => ({
               label: capitalizeFirst(d.channel),
               value: d.count,
-              color: CHANNEL_COLORS[d.channel] || undefined,
+              color: getChannelHex(d.channel),
             }))}
             height={300}
           />
@@ -295,7 +273,7 @@ export default function AnalyticsPage() {
             data={data.ticketsByPriority.map((d) => ({
               label: capitalizeFirst(d.priority),
               value: d.count,
-              color: PRIORITY_COLORS[d.priority] || undefined,
+              color: getPriorityHex(d.priority),
             }))}
             height={260}
           />
@@ -304,7 +282,7 @@ export default function AnalyticsPage() {
             data={data.ticketsByStatus.map((d) => ({
               label: capitalizeFirst(d.status),
               value: d.count,
-              color: STATUS_COLORS[d.status] || undefined,
+              color: getStatusHex(d.status),
             }))}
             height={260}
           />

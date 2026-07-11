@@ -128,7 +128,7 @@ export default async function DashboardPage() {
           />
           <StatCard
             title="Resolution Rate"
-            value={`${stats.resolutionRate}%`}
+            value={stats.totalConversations === 0 ? "No data yet" : `${stats.resolutionRate}%`}
             icon={CheckCircle}
             iconColor="bg-blue-50 text-blue-600"
           />
@@ -257,7 +257,9 @@ export default async function DashboardPage() {
                   <span className="text-owly-text-light">
                     Avg. Resolution Rate
                   </span>
-                  <span className="font-medium">{stats.resolutionRate}%</span>
+                  <span className="font-medium">
+                    {stats.totalConversations === 0 ? "No data yet" : `${stats.resolutionRate}%`}
+                  </span>
                 </div>
               </div>
             </div>

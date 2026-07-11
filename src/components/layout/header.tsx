@@ -124,6 +124,25 @@ export function Header({ title, description, actions }: HeaderProps) {
     });
   };
 
+  const toggleNotificationOpen = () => {
+    setNotificationOpen((open) => {
+      const opening = !open;
+      // Clear the badge as soon as the panel is opened (persisted server-side
+      // too), but leave each item's unread highlight in `notifications` alone
+      // so the user can still see which ones were new during this viewing -
+      // it'll only disappear on the next fetch.
+      if (opening && unreadCount > 0) {
+        setUnreadCount(0);
+        fetch("/api/notifications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ markAllRead: true }),
+        }).catch(() => {});
+      }
+      return opening;
+    });
+  };
+
   return (
     <header className="flex items-center justify-between gap-2 px-4 sm:px-6 py-3 sm:py-4 bg-owly-surface border-b border-owly-border transition-theme">
       <div className="animate-fade-in min-w-0">
@@ -165,7 +184,7 @@ export function Header({ title, description, actions }: HeaderProps) {
 
         <div className="relative" ref={notificationRef}>
           <button
-            onClick={() => setNotificationOpen((open) => !open)}
+            onClick={toggleNotificationOpen}
             className="relative p-2 text-owly-text-light hover:text-owly-text hover:bg-owly-primary-50 rounded-lg transition-colors"
             title="Notifications"
           >

@@ -134,6 +134,7 @@ function CategoryIcon({ color, name }: { color: string; name: string }) {
 export default function KnowledgeBasePage() {
   // --- State ---
   const [categories, setCategories] = useState<CategoryWithCount[]>([]);
+  const [showEmptyModuleCategories, setShowEmptyModuleCategories] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
@@ -251,6 +252,18 @@ export default function KnowledgeBasePage() {
   }, [fetchTokenTotals]);
 
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId) || null;
+
+  // Module installs auto-create a KB scope category (icon: "module") whether
+  // or not anything's ever been added to it - with several modules
+  // installed, that's several identical-looking empty rows cluttering the
+  // list. Collapse the empty ones behind a single toggle; non-empty module
+  // categories still show normally.
+  const emptyModuleCategories = categories.filter(
+    (c) => c.icon === "module" && c._count.entries === 0
+  );
+  const visibleCategories = categories.filter(
+    (c) => !(c.icon === "module" && c._count.entries === 0)
+  );
 
   // --- Category CRUD ---
 
@@ -633,7 +646,7 @@ export default function KnowledgeBasePage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-owly-text-light" />
               </div>
-            ) : categories.length === 0 ? (
+            ) : visibleCategories.length === 0 && emptyModuleCategories.length === 0 ? (
               <div className="px-4 py-12 text-center">
                 <FolderOpen className="h-10 w-10 mx-auto mb-3 text-owly-text-light opacity-40" />
                 <p className="text-sm font-medium text-owly-text-light">No categories yet</p>
@@ -650,7 +663,7 @@ export default function KnowledgeBasePage() {
               </div>
             ) : (
               <div className="py-1">
-                {categories.map((cat) => (
+                {visibleCategories.map((cat) => (
                   <div
                     key={cat.id}
                     className={cn(
@@ -704,6 +717,48 @@ export default function KnowledgeBasePage() {
                     )}
                   </div>
                 ))}
+                {emptyModuleCategories.length > 0 && (
+                  <div className="border-t border-owly-border mt-1 pt-1">
+                    <button
+                      onClick={() => setShowEmptyModuleCategories((v) => !v)}
+                      className="flex w-full items-center gap-2 px-4 py-2 text-xs font-medium text-owly-text-light hover:text-owly-text transition-colors"
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "h-3.5 w-3.5 transition-transform",
+                          showEmptyModuleCategories && "rotate-90"
+                        )}
+                      />
+                      {emptyModuleCategories.length} empty module{" "}
+                      {emptyModuleCategories.length === 1 ? "category" : "categories"}
+                    </button>
+                    {showEmptyModuleCategories &&
+                      emptyModuleCategories.map((cat) => (
+                        <div
+                          key={cat.id}
+                          className={cn(
+                            "group flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors",
+                            selectedCategoryId === cat.id
+                              ? "bg-owly-primary-50 border-r-2 border-owly-primary"
+                              : "hover:bg-owly-bg"
+                          )}
+                          onClick={() => setSelectedCategoryId(cat.id)}
+                        >
+                          <CategoryIcon color={cat.color} name={cat.name} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-owly-text truncate">
+                              {cat.name}
+                            </p>
+                            {cat.description && (
+                              <p className="text-xs text-owly-text-light truncate mt-0.5">
+                                {cat.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

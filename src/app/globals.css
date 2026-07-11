@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* This app toggles dark mode by adding/removing a `.dark` class on <html>
+   (see src/lib/hooks/use-theme.ts), not by following OS preference. Tailwind
+   v4's `dark:` variant defaults to `prefers-color-scheme` unless told
+   otherwise - without this, every `dark:*` utility in the app is inert
+   whenever the OS isn't itself in dark mode. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --owly-primary: #4A7C9B;
   --owly-primary-dark: #2D5A7B;

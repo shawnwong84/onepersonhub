@@ -39,27 +39,7 @@ export function getChannelLabel(channel: string): string {
   return labels[channel] || channel;
 }
 
-export function getStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    active: "bg-green-100 text-green-700",
-    resolved: "bg-blue-100 text-blue-700",
-    escalated: "bg-orange-100 text-orange-700",
-    closed: "bg-gray-100 text-gray-700",
-    open: "bg-yellow-100 text-yellow-700",
-    in_progress: "bg-blue-100 text-blue-700",
-    connected: "bg-green-100 text-green-700",
-    disconnected: "bg-red-100 text-red-700",
-    error: "bg-red-100 text-red-700",
-  };
-  return colors[status] || "bg-gray-100 text-gray-700";
-}
-
-export function getPriorityColor(priority: string): string {
-  const colors: Record<string, string> = {
-    low: "bg-gray-100 text-gray-700",
-    medium: "bg-yellow-100 text-yellow-700",
-    high: "bg-orange-100 text-orange-700",
-    urgent: "bg-red-100 text-red-700",
-  };
-  return colors[priority] || "bg-gray-100 text-gray-700";
-}
+// Re-exported from the single shared status-colors module (also used by
+// charts and the module workspace page) so existing call sites don't need
+// to change imports.
+export { getStatusColor, getPriorityColor } from "./status-colors";

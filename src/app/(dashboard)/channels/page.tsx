@@ -15,13 +15,13 @@ import {
   TestTube,
   PhoneCall,
   CheckCircle,
-  XCircle,
   Eye,
   EyeOff,
   Workflow,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { cn, formatRelativeTime } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -979,17 +979,13 @@ export default function ChannelsPage() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{
-    message: string;
-    type: "success" | "error";
-  } | null>(null);
+  const { toast } = useToast();
 
   const showToast = useCallback(
     (message: string, type: "success" | "error" = "success") => {
-      setToast({ message, type });
-      setTimeout(() => setToast(null), 3000);
+      toast({ type, title: message });
     },
-    []
+    [toast]
   );
 
   const fetchChannels = useCallback(async () => {
@@ -1136,24 +1132,6 @@ export default function ChannelsPage() {
         )}
       </div>
 
-      {/* Toast notification */}
-      {toast && (
-        <div
-          className={cn(
-            "fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all animate-in slide-in-from-bottom-4 duration-300",
-            toast.type === "success"
-              ? "bg-owly-success text-white"
-              : "bg-owly-danger text-white"
-          )}
-        >
-          {toast.type === "success" ? (
-            <CheckCircle className="h-4 w-4" />
-          ) : (
-            <XCircle className="h-4 w-4" />
-          )}
-          {toast.message}
-        </div>
-      )}
     </>
   );
 }

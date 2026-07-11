@@ -69,8 +69,20 @@ export default function LoginPage() {
 
   if (checking) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-owly-primary border-t-transparent" />
+      <div className="bg-owly-surface rounded-2xl shadow-lg border border-owly-border p-8">
+        <div className="flex flex-col items-center">
+          <Image
+            src="/owly.png"
+            alt="Cosstigo"
+            width={56}
+            height={56}
+            className="mb-4"
+          />
+          <h1 className="text-2xl font-bold text-owly-text">
+            Welcome to Cosstigo
+          </h1>
+          <div className="mt-8 h-6 w-6 animate-spin rounded-full border-2 border-owly-primary border-t-transparent" />
+        </div>
       </div>
     );
   }

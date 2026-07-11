@@ -20,6 +20,7 @@ import {
   Table2,
 } from "lucide-react";
 import { cn, formatRelativeTime } from "@/lib/utils";
+import { getStatusColor, getPriorityColor } from "@/lib/status-colors";
 import { getWorkspaceConfig, type WorkspaceField } from "@/lib/marketplace/workspace-config";
 
 interface MarketplaceModule {
@@ -573,9 +574,9 @@ function ModuleWorkspacePageContent() {
                             {workspace.rowAlert?.applies(record.data || {}) && (
                               <Badge tone="red">{workspace.rowAlert.label}</Badge>
                             )}
-                            <Badge>{statusLabel(record.status)}</Badge>
+                            <Badge className={getStatusColor(record.status)}>{statusLabel(record.status)}</Badge>
                             {(record.priority === "urgent" || record.priority === "high") && (
-                              <Badge tone="red">{record.priority}</Badge>
+                              <Badge className={getPriorityColor(record.priority)}>{record.priority}</Badge>
                             )}
                           </span>
                         </td>
@@ -742,16 +743,25 @@ function Stat({
   );
 }
 
-function Badge({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "red" | "purple" }) {
+function Badge({
+  children,
+  tone = "default",
+  className,
+}: {
+  children: React.ReactNode;
+  tone?: "default" | "red" | "purple";
+  className?: string;
+}) {
   return (
     <span
       className={cn(
         "rounded-full px-2 py-1 text-xs font-semibold",
-        tone === "red"
-          ? "bg-red-50 text-red-700"
-          : tone === "purple"
-          ? "bg-purple-50 text-purple-700"
-          : "bg-owly-bg text-owly-text-light"
+        className ||
+          (tone === "red"
+            ? "bg-red-50 text-red-700 dark:bg-red-500/20 dark:text-red-300"
+            : tone === "purple"
+            ? "bg-purple-50 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300"
+            : "bg-owly-bg text-owly-text-light")
       )}
     >
       {children}

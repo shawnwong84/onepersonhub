@@ -3,7 +3,7 @@ import * as qrcode from "qrcode";
 import { prisma } from "@/lib/prisma";
 import { chat, createNewConversation } from "@/lib/ai/engine";
 import { logger } from "@/lib/logger";
-import { resolveCustomer } from "@/lib/customer-resolver";
+import { resolveCustomer, normalizePhone } from "@/lib/customer-resolver";
 import { runChannelWorkflows, type WorkflowRuntimeResult } from "@/lib/workflow-runtime";
 import { emitNewMessage } from "@/lib/realtime";
 import { getChannelAutomationSettings } from "@/lib/channel-automation";
@@ -141,8 +141,10 @@ export async function processIncomingMessage(
   });
 
   const contact = await message.getContact();
-  const customerName = contact.pushname || contact.name || "Unknown";
   const customerContact = message.from;
+  // Most WhatsApp senders don't set a pushname; a raw phone number is a far
+  // more useful inbox label than a generic "Unknown" for every such row.
+  const customerName = contact.pushname || contact.name || normalizePhone(customerContact) || "Unknown";
 
   // Resolve customer identity across channels
   const customerId = await resolveCustomer("whatsapp", customerContact, customerName);

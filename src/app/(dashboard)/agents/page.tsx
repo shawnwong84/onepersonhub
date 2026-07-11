@@ -351,12 +351,12 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
     <>
       <Header title="Agents" description="Assign each AI agent to one channel" />
 
-      <div className="flex h-[calc(100vh-4.5rem)] bg-slate-50">
-        <aside className="w-80 border-r border-slate-200 bg-white p-4">
+      <div className="flex h-[calc(100vh-4.5rem)] bg-owly-bg">
+        <aside className="w-80 border-r border-owly-border bg-owly-surface p-4">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">Agent profiles</h2>
-              <p className="text-xs text-slate-500">Channel, KB, workflow, and tool routing</p>
+              <h2 className="text-sm font-semibold text-owly-text">Agent profiles</h2>
+              <p className="text-xs text-owly-text-light">Channel, KB, workflow, and tool routing</p>
             </div>
             <button
               onClick={startNewAgent}
@@ -368,11 +368,11 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
           </div>
 
           {loading ? (
-            <div className="rounded-lg border border-slate-200 p-4 text-sm text-slate-500">
+            <div className="rounded-lg border border-owly-border p-4 text-sm text-owly-text-light">
               Loading agents...
             </div>
           ) : agents.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+            <div className="rounded-lg border border-dashed border-owly-border p-4 text-sm text-owly-text-light">
               No agents yet. Create one for WhatsApp support, email finance, or another channel role.
             </div>
           ) : (
@@ -385,13 +385,13 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                     "w-full rounded-lg border p-3 text-left transition-colors",
                     selectedAgentId === agent.id
                       ? "border-owly-primary bg-owly-primary/10"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
+                      : "border-owly-border bg-owly-surface hover:bg-owly-bg"
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-900">{agent.name}</p>
-                      <p className="line-clamp-2 text-xs text-slate-500">
+                      <p className="font-semibold text-owly-text">{agent.name}</p>
+                      <p className="line-clamp-2 text-xs text-owly-text-light">
                         {agent.description || "No description"}
                       </p>
                     </div>
@@ -400,13 +400,13 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                         "rounded-full px-2 py-0.5 text-[11px] font-medium",
                         agent.status === "active"
                           ? "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-100 text-slate-600"
+                          : "bg-owly-bg text-owly-text-light"
                       )}
                     >
                       {agent.status}
                     </span>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-owly-text-light">
                     <span>
                       {CHANNEL_OPTIONS.find((option) => option.value === agent.metadata?.channel)?.label ||
                         "WhatsApp"}
@@ -429,10 +429,10 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
 
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">
+              <h1 className="text-2xl font-semibold text-owly-text">
                 {selectedAgent ? selectedAgent.name : "New agent"}
               </h1>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-owly-text-light">
                 Define what this agent knows, where it listens, and what it can execute.
               </p>
             </div>
@@ -445,7 +445,7 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                     setTestOpen(true);
                   }}
                   disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-md border border-owly-border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 rounded-md border border-owly-border px-4 py-2 text-sm font-medium text-owly-text hover:bg-owly-bg"
                 >
                   <Bot className="h-4 w-4" />
                   Test agent
@@ -477,24 +477,24 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
             if (!stats) return null;
             return (
               <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <p className="text-xs text-slate-500">Conversations (30d)</p>
-                  <p className="text-xl font-bold text-slate-900">{stats.conversations}</p>
+                <div className="rounded-lg border border-owly-border bg-owly-surface p-3">
+                  <p className="text-xs text-owly-text-light">Conversations (30d)</p>
+                  <p className="text-xl font-bold text-owly-text">{stats.conversations}</p>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <p className="text-xs text-slate-500">AI fallback rate</p>
-                  <p className="text-xl font-bold text-slate-900">{stats.aiFallbackRate}%</p>
-                  <p className="text-[11px] text-slate-400">{stats.aiReplies} AI / {stats.workflowReplies} workflow replies</p>
+                <div className="rounded-lg border border-owly-border bg-owly-surface p-3">
+                  <p className="text-xs text-owly-text-light">AI fallback rate</p>
+                  <p className="text-xl font-bold text-owly-text">{stats.aiFallbackRate}%</p>
+                  <p className="text-[11px] text-owly-text-light">{stats.aiReplies} AI / {stats.workflowReplies} workflow replies</p>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <p className="text-xs text-slate-500">Workflow success</p>
-                  <p className="text-xl font-bold text-slate-900">{stats.workflowSuccessRate}%</p>
-                  <p className="text-[11px] text-slate-400">{stats.workflowRuns} runs</p>
+                <div className="rounded-lg border border-owly-border bg-owly-surface p-3">
+                  <p className="text-xs text-owly-text-light">Workflow success</p>
+                  <p className="text-xl font-bold text-owly-text">{stats.workflowSuccessRate}%</p>
+                  <p className="text-[11px] text-owly-text-light">{stats.workflowRuns} runs</p>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <p className="text-xs text-slate-500">Human handoff rate</p>
-                  <p className="text-xl font-bold text-slate-900">{stats.handoffRate}%</p>
-                  <p className="text-[11px] text-slate-400">{stats.handoffs} takeovers</p>
+                <div className="rounded-lg border border-owly-border bg-owly-surface p-3">
+                  <p className="text-xs text-owly-text-light">Human handoff rate</p>
+                  <p className="text-xl font-bold text-owly-text">{stats.handoffRate}%</p>
+                  <p className="text-[11px] text-owly-text-light">{stats.handoffs} takeovers</p>
                 </div>
               </div>
             );
@@ -502,27 +502,27 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <section className="space-y-5">
-              <div className="rounded-lg border border-slate-200 bg-white p-5">
+              <div className="rounded-lg border border-owly-border bg-owly-surface p-5">
                 <div className="mb-4 flex items-center gap-2">
                   <Bot className="h-5 w-5 text-owly-primary" />
-                  <h2 className="font-semibold text-slate-900">Agent identity</h2>
+                  <h2 className="font-semibold text-owly-text">Agent identity</h2>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="space-y-1">
-                    <span className="text-sm font-medium text-slate-700">Name</span>
+                    <span className="text-sm font-medium text-owly-text">Name</span>
                     <input
                       value={form.name}
                       onChange={(event) => setForm({ ...form, name: event.target.value })}
                       placeholder="Customer Support Agent"
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-owly-primary"
+                      className="w-full rounded-md border border-owly-border px-3 py-2 text-sm outline-none focus:border-owly-primary"
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-sm font-medium text-slate-700">Status</span>
+                    <span className="text-sm font-medium text-owly-text">Status</span>
                     <select
                       value={form.status}
                       onChange={(event) => setForm({ ...form, status: event.target.value })}
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-owly-primary"
+                      className="w-full rounded-md border border-owly-border px-3 py-2 text-sm outline-none focus:border-owly-primary"
                     >
                       <option value="active">Active</option>
                       <option value="draft">Draft</option>
@@ -531,23 +531,23 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                   </label>
                 </div>
                 <label className="mt-4 block space-y-1">
-                  <span className="text-sm font-medium text-slate-700">Description</span>
+                  <span className="text-sm font-medium text-owly-text">Description</span>
                   <textarea
                     value={form.description}
                     onChange={(event) => setForm({ ...form, description: event.target.value })}
                     placeholder="Handles WhatsApp support questions and refund triage."
                     rows={3}
-                    className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-owly-primary"
+                    className="w-full rounded-md border border-owly-border px-3 py-2 text-sm outline-none focus:border-owly-primary"
                   />
                 </label>
                 <label className="mt-4 block space-y-1">
-                  <span className="text-sm font-medium text-slate-700">System instructions</span>
+                  <span className="text-sm font-medium text-owly-text">System instructions</span>
                   <textarea
                     value={form.systemPrompt}
                     onChange={(event) => setForm({ ...form, systemPrompt: event.target.value })}
                     placeholder="Use the scoped KB first. Ask for approval before refund or payment actions."
                     rows={5}
-                    className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-owly-primary"
+                    className="w-full rounded-md border border-owly-border px-3 py-2 text-sm outline-none focus:border-owly-primary"
                   />
                 </label>
               </div>
@@ -567,11 +567,11 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                         "rounded-lg border p-4 text-left transition-colors",
                         form.channel === option.value
                           ? "border-owly-primary bg-owly-primary/10"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
+                          : "border-owly-border bg-owly-surface hover:bg-owly-bg"
                       )}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-slate-900">
+                        <span className="font-semibold text-owly-text">
                           {option.label}
                         </span>
                         {form.channel === option.value && (
@@ -580,7 +580,7 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-owly-text-light">
                         This agent handles {option.label.toLowerCase()} conversations.
                       </p>
                     </button>
@@ -601,7 +601,7 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                         "flex cursor-pointer items-start gap-3 rounded-lg border p-3",
                         form.categoryIds.includes(category.id)
                           ? "border-emerald-400 bg-emerald-50"
-                          : "border-slate-200"
+                          : "border-owly-border"
                       )}
                     >
                       <input
@@ -616,8 +616,8 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                         className="mt-1"
                       />
                       <div>
-                        <p className="font-medium text-slate-900">{category.name}</p>
-                        <p className="text-xs text-slate-500">
+                        <p className="font-medium text-owly-text">{category.name}</p>
+                        <p className="text-xs text-owly-text-light">
                           {category.description || "Knowledge category"}
                         </p>
                       </div>
@@ -639,7 +639,7 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                         "flex cursor-pointer items-start gap-3 rounded-lg border p-3",
                         form.flowIds.includes(flow.id)
                           ? "border-violet-400 bg-violet-50"
-                          : "border-slate-200"
+                          : "border-owly-border"
                       )}
                     >
                       <input
@@ -654,8 +654,8 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                         className="mt-1"
                       />
                       <div>
-                        <p className="font-medium text-slate-900">{flow.name}</p>
-                        <p className="text-xs text-slate-500">
+                        <p className="font-medium text-owly-text">{flow.name}</p>
+                        <p className="text-xs text-owly-text-light">
                           {flow.isActive ? "Active" : "Draft"} - {flow.description || "No description"}
                         </p>
                       </div>
@@ -666,20 +666,20 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
             </section>
 
             <aside className="space-y-5">
-              <div className="rounded-lg border border-slate-200 bg-white p-5">
+              <div className="rounded-lg border border-owly-border bg-owly-surface p-5">
                 <div className="mb-4 flex items-center gap-2">
                   <Settings2 className="h-5 w-5 text-owly-primary" />
-                  <h2 className="font-semibold text-slate-900">Runtime policy</h2>
+                  <h2 className="font-semibold text-owly-text">Runtime policy</h2>
                 </div>
                 <div className="space-y-4">
                   <label className="space-y-1 block">
-                    <span className="text-sm font-medium text-slate-700">Automation mode</span>
+                    <span className="text-sm font-medium text-owly-text">Automation mode</span>
                     <select
                       value={form.automationMode}
                       onChange={(event) =>
                         setForm({ ...form, automationMode: event.target.value })
                       }
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-owly-border px-3 py-2 text-sm"
                     >
                       <option value="workflow_first">Workflow first</option>
                       <option value="ai_first">AI first</option>
@@ -687,13 +687,13 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                     </select>
                   </label>
                   <label className="space-y-1 block">
-                    <span className="text-sm font-medium text-slate-700">Fallback</span>
+                    <span className="text-sm font-medium text-owly-text">Fallback</span>
                     <select
                       value={form.fallbackMode}
                       onChange={(event) =>
                         setForm({ ...form, fallbackMode: event.target.value })
                       }
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-owly-border px-3 py-2 text-sm"
                     >
                       <option value="ai_reply">AI reply</option>
                       <option value="human_handoff">Human handoff</option>
@@ -701,24 +701,24 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                     </select>
                   </label>
                   <label className="space-y-1 block">
-                    <span className="text-sm font-medium text-slate-700">Escalation department</span>
+                    <span className="text-sm font-medium text-owly-text">Escalation department</span>
                     <select
                       value={form.escalationDepartmentId}
                       onChange={(event) =>
                         setForm({ ...form, escalationDepartmentId: event.target.value })
                       }
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-owly-border px-3 py-2 text-sm"
                     >
                       <option value="">No escalation department</option>
                       {departments.map((dept) => (
                         <option key={dept.id} value={dept.id}>{dept.name}</option>
                       ))}
                     </select>
-                    <span className="block text-xs text-slate-400">
+                    <span className="block text-xs text-owly-text-light">
                       Human handoffs from this agent route to this department.
                     </span>
                   </label>
-                  <label className="flex items-center gap-3 rounded-lg border border-slate-200 p-3">
+                  <label className="flex items-center gap-3 rounded-lg border border-owly-border p-3">
                     <input
                       type="checkbox"
                       checked={form.requireApproval}
@@ -726,9 +726,9 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                         setForm({ ...form, requireApproval: event.target.checked })
                       }
                     />
-                    <span className="text-sm text-slate-700">Require approval before actions</span>
+                    <span className="text-sm text-owly-text">Require approval before actions</span>
                   </label>
-                  <label className="flex items-center gap-3 rounded-lg border border-slate-200 p-3">
+                  <label className="flex items-center gap-3 rounded-lg border border-owly-border p-3">
                     <input
                       type="checkbox"
                       checked={form.useGlobalKnowledge}
@@ -736,18 +736,18 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                         setForm({ ...form, useGlobalKnowledge: event.target.checked })
                       }
                     />
-                    <span className="text-sm text-slate-700">Use global KB when no scope is selected</span>
+                    <span className="text-sm text-owly-text">Use global KB when no scope is selected</span>
                   </label>
                 </div>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-5">
+              <div className="rounded-lg border border-owly-border bg-owly-surface p-5">
                 <div className="mb-4 flex items-center gap-2">
                   <Brain className="h-5 w-5 text-owly-primary" />
-                  <h2 className="font-semibold text-slate-900">Enabled capabilities</h2>
+                  <h2 className="font-semibold text-owly-text">Enabled capabilities</h2>
                 </div>
                 {form.tools.map((tool, index) => (
-                  <label key={`${tool.toolType}-${tool.toolName}`} className="mb-3 flex items-start gap-3 rounded-lg border border-slate-200 p-3">
+                  <label key={`${tool.toolType}-${tool.toolName}`} className="mb-3 flex items-start gap-3 rounded-lg border border-owly-border p-3">
                     <input
                       type="checkbox"
                       checked={tool.isEnabled}
@@ -759,10 +759,10 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                       className="mt-1"
                     />
                     <div>
-                      <p className="font-medium text-slate-900">
+                      <p className="font-medium text-owly-text">
                         {tool.toolName.replaceAll("_", " ")}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-owly-text-light">
                         {tool.toolType.toUpperCase()} tool
                         {tool.requiresApproval ? " - approval required" : ""}
                       </p>
@@ -771,12 +771,12 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                 ))}
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-5">
+              <div className="rounded-lg border border-owly-border bg-owly-surface p-5">
                 <div className="mb-3 flex items-center gap-2">
                   <Mail className="h-5 w-5 text-owly-primary" />
-                  <h2 className="font-semibold text-slate-900">Recommended setup</h2>
+                  <h2 className="font-semibold text-owly-text">Recommended setup</h2>
                 </div>
-                <ul className="space-y-2 text-sm text-slate-600">
+                <ul className="space-y-2 text-sm text-owly-text-light">
                   <li className="flex gap-2">
                     <Check className="mt-0.5 h-4 w-4 text-emerald-600" />
                     WhatsApp Support Agent: support KB, refund approval workflow.
@@ -798,18 +798,18 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
 
       {testOpen && selectedAgentId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-owly-border bg-owly-surface shadow-xl">
+            <div className="flex items-center justify-between border-b border-owly-border px-5 py-4">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Test console</h3>
-                <p className="text-sm text-slate-500">
+                <h3 className="text-lg font-semibold text-owly-text">Test console</h3>
+                <p className="text-sm text-owly-text-light">
                   Dry-run this agent with its KB scope and workflows. Nothing is sent to customers.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setTestOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+                className="rounded-lg p-1.5 text-owly-text-light hover:bg-owly-bg"
               >
                 <Trash2 className="hidden" />
                 <span className="text-lg leading-none">&times;</span>
@@ -820,7 +820,7 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                 <select
                   value={testChannel}
                   onChange={(event) => setTestChannel(event.target.value)}
-                  className="h-10 rounded-md border border-slate-200 px-3 text-sm"
+                  className="h-10 rounded-md border border-owly-border px-3 text-sm"
                 >
                   {CHANNEL_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -833,7 +833,7 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                     if (event.key === "Enter") runAgentTest();
                   }}
                   placeholder="Type a sample customer message..."
-                  className="h-10 flex-1 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-owly-primary"
+                  className="h-10 flex-1 rounded-md border border-owly-border px-3 text-sm outline-none focus:border-owly-primary"
                 />
                 <button
                   type="button"
@@ -853,36 +853,36 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                     </p>
                   )}
                   {testResult.reply && (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Agent reply</p>
-                      <p className="whitespace-pre-wrap text-sm text-slate-800">{testResult.reply}</p>
+                    <div className="rounded-lg border border-owly-border bg-owly-bg p-4">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-owly-text-light">Agent reply</p>
+                      <p className="whitespace-pre-wrap text-sm text-owly-text">{testResult.reply}</p>
                     </div>
                   )}
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-lg border border-slate-200 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <div className="rounded-lg border border-owly-border p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-owly-text-light">
                         Knowledge used ({testResult.knowledgeScopeCount} scope{testResult.knowledgeScopeCount === 1 ? "" : "s"}
                         {testResult.usesGlobalKnowledge ? " + global" : ""})
                       </p>
                       {testResult.knowledge.length === 0 ? (
-                        <p className="mt-2 text-sm text-slate-500">No KB entries matched.</p>
+                        <p className="mt-2 text-sm text-owly-text-light">No KB entries matched.</p>
                       ) : (
-                        <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                        <ul className="mt-2 space-y-1 text-sm text-owly-text">
                           {testResult.knowledge.map((item) => (
                             <li key={item.id} className="flex justify-between gap-2">
                               <span className="truncate">{item.title}</span>
-                              <span className="text-xs text-slate-400">{Math.round(item.score * 100)}%</span>
+                              <span className="text-xs text-owly-text-light">{Math.round(item.score * 100)}%</span>
                             </li>
                           ))}
                         </ul>
                       )}
                     </div>
-                    <div className="rounded-lg border border-slate-200 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workflows that would consider this</p>
+                    <div className="rounded-lg border border-owly-border p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-owly-text-light">Workflows that would consider this</p>
                       {testResult.matchedFlows.length === 0 ? (
-                        <p className="mt-2 text-sm text-slate-500">None - the agent would fall back per its policy.</p>
+                        <p className="mt-2 text-sm text-owly-text-light">None - the agent would fall back per its policy.</p>
                       ) : (
-                        <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                        <ul className="mt-2 space-y-1 text-sm text-owly-text">
                           {testResult.matchedFlows.map((flow) => (
                             <li key={flow.id}>{flow.name}</li>
                           ))}
@@ -916,12 +916,12 @@ function AssignmentCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5">
+    <div className="rounded-lg border border-owly-border bg-owly-surface p-5">
       <div className="mb-4 flex items-center gap-2">
         <Icon className="h-5 w-5 text-owly-primary" />
         <div>
-          <h2 className="font-semibold text-slate-900">{title}</h2>
-          <p className="text-xs text-slate-500">{subtitle}</p>
+          <h2 className="font-semibold text-owly-text">{title}</h2>
+          <p className="text-xs text-owly-text-light">{subtitle}</p>
         </div>
       </div>
       {children}
