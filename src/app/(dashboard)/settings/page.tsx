@@ -382,7 +382,7 @@ function SaveButton({
   saving: boolean;
 }) {
   return (
-    <div className="flex justify-end pt-4 border-t border-owly-border">
+    <div className="flex justify-end">
       <button
         onClick={onClick}
         disabled={saving}
@@ -996,31 +996,40 @@ export default function SettingsPage() {
       <Header title="Settings" description="Configure your Cosstigo instance" />
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-4xl mx-auto">
-          {/* Tab navigation */}
-          <div className="flex gap-1 p-1 bg-owly-bg rounded-xl border border-owly-border mb-6 overflow-x-auto">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap",
-                    isActive
-                      ? "bg-owly-surface text-owly-primary shadow-sm"
-                      : "text-owly-text-light hover:text-owly-text hover:bg-owly-surface/50"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {tab.label}
-                </button>
-              );
-            })}
+          {/* Tab navigation - wider than the form below so more tabs fit
+              before scrolling; flex-shrink-0 keeps labels from squishing
+              instead of the bar scrolling, and the edge fades hint that
+              there's more to scroll to. */}
+          <div className="relative mb-6">
+            <div className="flex gap-1 p-1 bg-owly-bg rounded-xl border border-owly-border overflow-x-auto">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={cn(
+                      "flex flex-shrink-0 items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap",
+                      isActive
+                        ? "bg-owly-surface text-owly-primary shadow-sm"
+                        : "text-owly-text-light hover:text-owly-text hover:bg-owly-surface/50"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="pointer-events-none absolute inset-y-1 right-0 w-8 rounded-r-xl bg-gradient-to-l from-owly-bg to-transparent" />
           </div>
 
-          {/* Section content */}
-          <div className="bg-owly-surface rounded-xl border border-owly-border p-6 space-y-6">
+          {/* Section content - capped narrower than the tab bar; most
+              fields here are single values (names, keys, toggles) and
+              stretching them to the full 4xl width read as oddly long
+              input boxes. */}
+          <div className="max-w-[560px] bg-owly-surface rounded-xl border border-owly-border p-6 space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-owly-text">
                 {tabs.find((t) => t.key === activeTab)?.label}
@@ -1044,8 +1053,14 @@ export default function SettingsPage() {
             </div>
 
             {sectionRenderers[activeTab]}
+          </div>
 
-            <SaveButton onClick={saveSection} saving={saving} />
+          {/* Sticky so the save action stays reachable without scrolling
+              to the bottom of long sections (e.g. General, Email). */}
+          <div className="sticky bottom-0 max-w-[560px] mt-4 -mx-1 bg-owly-bg/95 px-1 pb-1 pt-2 backdrop-blur-sm">
+            <div className="rounded-xl border border-owly-border bg-owly-surface px-4 py-3">
+              <SaveButton onClick={saveSection} saving={saving} />
+            </div>
           </div>
         </div>
       </div>

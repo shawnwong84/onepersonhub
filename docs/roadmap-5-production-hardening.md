@@ -255,7 +255,15 @@ Page work:
   Found and fixed a real bug uncovered while wiring pagination: the "Open"/"In Progress"/"Resolved" stat cards were computed by filtering the already-paginated `tickets` array client-side - correct only by accident when everything fit on one page. Added a `fetchStatusCounts` call (three parallel `GET /api/tickets?status=X&limit=1` requests reading `pagination.total`, respecting the same priority/department/search filters) so the stat cards reflect the true filtered total regardless of which page is showing.
 
   Verified live: bulk-selected 2 tickets, assigned to a real team member, confirmed a 200 response and the "Assigned To" column updating, then reverted the test mutation; paginated to page 2 and confirmed different tickets loaded ("Showing 1-20 of 32"); dark mode has no artifacts. `tsc`/lint clean, full suite (409/409) passing.
-- [ ] Settings: cap form width (~560px), scrollable tab bar with fade affordance, sticky save bar.
+- [x] Settings: cap form width (~560px), scrollable tab bar with fade affordance, sticky save bar.
+
+  Root-caused the tab bar "truncation" complaint: the bar already had `overflow-x-auto`, but the tab buttons had no `flex-shrink-0` - so at narrow widths the flex container shrank the buttons (squishing/truncating "WhatsApp" to "What…") instead of actually scrolling. Added `flex-shrink-0` so buttons keep their natural width and the bar genuinely scrolls, plus a right-edge gradient fade as a scroll affordance.
+
+  Split the single `max-w-4xl` wrapper (896px, applied to both the tab bar and the form) into two: the tab bar keeps the wider width so more tabs are visible before scrolling, while the form content card is capped to `max-w-[560px]` per the review - single-value fields (names, keys) no longer stretch into ~900px input boxes, and the existing 2-column grids (Email's SMTP/IMAP host+port pairs) still read comfortably at that width.
+
+  Save button is now `sticky bottom-0` within the scrollable page instead of sitting at the end of the form content, so it stays reachable on long sections (General, Email) without scrolling all the way down - verified on both desktop and a 375px mobile viewport, where it stays visible above the bottom tab bar.
+
+  Verified live at 1600px and 375px, light and dark: tab labels no longer truncate, fade edge shows on the right when tabs overflow, form fields read at a sensible width, Save button stays pinned while scrolling a long section. `tsc`/lint clean, full suite (409/409) passing.
 - [ ] Sidebar IA: merge Insights into System, collapsible sections, Modules pinned higher.
 
 Quick wins (each under an hour — batch early):
