@@ -26,6 +26,16 @@ Scope agreed with the user 2026-07-11: role-aware dashboard with trends, sidebar
 
   Verified live as both `admin` (unscoped, sees org-wide 80 conversations/29 tickets with real trend deltas) and the `e2e-agent` fixture (scoped, sees exactly their 1 assigned conversation and adapted labels) at 1600px and 375px, light and dark — zero console errors either account. `tsc`/lint clean, full suite (409/409) passing.
 
+- [x] **Added after initial completion, per explicit follow-up request**: bring analytics visualizations onto the dashboard itself rather than leaving them only on the standalone `/analytics` page.
+
+  Reused the existing chart components (`LineChart`/`DonutChart`/`BarChart` from `src/components/ui/chart.tsx` — already battle-tested via the analytics page, just plain client components taking a `{label, value, color?}[]` prop) and the existing `getChannelHex`/`getPriorityHex` helpers from the Phase 7 (roadmap 5) color-system work, so chart colors match the rest of the app instead of introducing a fourth ad-hoc palette.
+
+  Critically, **did not** reuse `/api/analytics` directly — that endpoint queries org-wide data with no role scoping at all, which would have silently broken the scoping work above the moment a chart was added (a scoped agent would suddenly see every conversation's chart data). Instead extended `getStats` in the dashboard page itself with three new scoped queries: a 14-day conversation-volume line chart, a 14-day channel-breakdown donut, and a current-open-tickets-by-priority bar chart (day-bucketed in JS, matching `/api/analytics`'s own convention of no raw SQL grouping). All three go through the same `conversationScope`/`ticketScope` as everything else on the page.
+
+  New layout: charts row (line + donut) inserted between the stat cards and the existing Recent Conversations/Channel Overview row; the priority bar chart was added into the existing right-hand column above Channel Overview, and only renders when there's at least one open ticket (avoids showing an empty chart to a scoped agent with zero tickets, which the live agent-account check below caught immediately).
+
+  Verified live as both accounts again: admin sees the full 14-day trend and channel mix (Webhook/WhatsApp/Email); the `e2e-agent` fixture's line/donut charts correctly show only their single conversation, and the priority bar chart correctly disappears (0 open tickets) instead of rendering empty. 1600px and 375px, light and dark, zero console errors. `tsc`/lint clean, full suite (408/408) passing.
+
 ## Phase 2: Sidebar — collapse/expand polish
 
 - [x] Persist the whole-sidebar icon-only `collapsed` state to `localStorage` (mirrors the per-section collapse persistence added last session; currently resets on every reload).

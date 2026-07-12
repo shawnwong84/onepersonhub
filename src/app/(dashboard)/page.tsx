@@ -1,5 +1,6 @@
 import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/ui/stat-card";
+import { LineChart, DonutChart, BarChart } from "@/components/ui/chart";
 import { OnboardingChecklist } from "@/components/ui/onboarding-checklist";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
@@ -16,8 +17,23 @@ import {
   Clock,
 } from "lucide-react";
 import { formatRelativeTime, getChannelLabel, getStatusColor } from "@/lib/utils";
+import { getChannelHex, getPriorityHex } from "@/lib/status-colors";
 
 const TREND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const CHART_WINDOW_DAYS = 14;
+
+function formatDateKey(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+function formatChartLabel(dateKey: string): string {
+  const [, month, day] = dateKey.split("-");
+  return `${month}/${day}`;
+}
+
+function capitalizeFirst(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 interface Trend {
   change: string;
@@ -56,6 +72,7 @@ async function getStats(user: ScopedUser) {
   const now = new Date();
   const periodStart = new Date(now.getTime() - TREND_WINDOW_MS);
   const prevPeriodStart = new Date(now.getTime() - 2 * TREND_WINDOW_MS);
+  const chartWindowStart = new Date(now.getTime() - CHART_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
   const [
     totalConversations,
@@ -73,6 +90,8 @@ async function getStats(user: ScopedUser) {
     createdThisPeriodForRate,
     resolvedPrevPeriod,
     createdPrevPeriodForRate,
+    chartWindowConversations,
+    openTicketsByPriority,
   ] = await Promise.all([
     prisma.conversation.count({ where: scoped }),
     prisma.conversation.count({ where: { ...scoped, status: "active" } }),
@@ -116,7 +135,51 @@ async function getStats(user: ScopedUser) {
     prisma.conversation.count({
       where: { ...scoped, createdAt: { gte: prevPeriodStart, lt: periodStart } },
     }),
+    // Chart data - fetched raw and bucketed in JS below, matching the
+    // existing /api/analytics route's convention (no raw SQL grouping).
+    prisma.conversation.findMany({
+      where: { ...scoped, createdAt: { gte: chartWindowStart } },
+      select: { createdAt: true, channel: true },
+    }),
+    prisma.ticket.groupBy({
+      by: ["priority"],
+      where: { ...ticketScoped, status: "open" },
+      _count: { id: true },
+    }),
   ]);
+
+  // -- Conversations per day (last 14 days) --
+  const dayMap = new Map<string, number>();
+  for (let i = 0; i < CHART_WINDOW_DAYS; i++) {
+    const d = new Date(chartWindowStart.getTime() + i * 24 * 60 * 60 * 1000);
+    dayMap.set(formatDateKey(d), 0);
+  }
+  for (const c of chartWindowConversations) {
+    const key = formatDateKey(new Date(c.createdAt));
+    if (dayMap.has(key)) dayMap.set(key, (dayMap.get(key) || 0) + 1);
+  }
+  const conversationsOverTime = Array.from(dayMap.entries()).map(([date, count]) => ({
+    label: formatChartLabel(date),
+    value: count,
+  }));
+
+  // -- Channel breakdown (same 14-day window) --
+  const channelCounts = new Map<string, number>();
+  for (const c of chartWindowConversations) {
+    channelCounts.set(c.channel, (channelCounts.get(c.channel) || 0) + 1);
+  }
+  const channelBreakdown = Array.from(channelCounts.entries()).map(([channel, count]) => ({
+    label: capitalizeFirst(channel),
+    value: count,
+    color: getChannelHex(channel),
+  }));
+
+  // -- Open tickets by priority (current workload, not time-boxed) --
+  const ticketsByPriority = openTicketsByPriority.map((g) => ({
+    label: capitalizeFirst(g.priority),
+    value: g._count.id,
+    color: getPriorityHex(g.priority),
+  }));
 
   const resolvedConversations = await prisma.conversation.count({
     where: { ...scoped, status: "resolved" },
@@ -145,6 +208,9 @@ async function getStats(user: ScopedUser) {
     resolutionRate,
     recentConversations,
     channels,
+    conversationsOverTime,
+    channelBreakdown,
+    ticketsByPriority,
     trends: {
       conversations: computeTrend(
         newConversationsThisPeriod,
@@ -251,6 +317,26 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-owly-surface rounded-xl border border-owly-border p-5">
+            <LineChart
+              title={scoped ? "My Conversations Over Time" : "Conversations Over Time"}
+              data={stats.conversationsOverTime}
+              height={240}
+            />
+          </div>
+          <div className="bg-owly-surface rounded-xl border border-owly-border p-5">
+            {stats.channelBreakdown.length === 0 ? (
+              <div className="flex h-full min-h-[240px] flex-col items-center justify-center text-center text-owly-text-light">
+                <MessageSquare className="h-8 w-8 mb-2 opacity-40" />
+                <p className="text-sm">No conversations in the last 14 days</p>
+              </div>
+            ) : (
+              <DonutChart title="Channel Breakdown" data={stats.channelBreakdown} height={240} />
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-owly-surface rounded-xl border border-owly-border">
             <div className="px-5 py-4 border-b border-owly-border">
               <h3 className="font-semibold text-owly-text">
@@ -319,6 +405,16 @@ export default async function DashboardPage() {
           </div>
 
           <div className="space-y-6">
+            {stats.ticketsByPriority.length > 0 && (
+              <div className="bg-owly-surface rounded-xl border border-owly-border p-5">
+                <BarChart
+                  title={scoped ? "My Open Tickets by Priority" : "Open Tickets by Priority"}
+                  data={stats.ticketsByPriority}
+                  height={160}
+                />
+              </div>
+            )}
+
             <div className="bg-owly-surface rounded-xl border border-owly-border">
               <div className="px-5 py-4 border-b border-owly-border">
                 <h3 className="font-semibold text-owly-text">
