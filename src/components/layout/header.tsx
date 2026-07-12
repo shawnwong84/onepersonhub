@@ -23,12 +23,20 @@ interface NotificationData {
   createdAt: string;
 }
 
+interface CurrentUser {
+  name: string;
+  username: string;
+  role: string;
+  permissions: string[];
+}
+
 export function Header({ title, description, actions }: HeaderProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const { theme, toggleTheme } = useTheme();
   const router = useRouter();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -60,6 +68,34 @@ export function Header({ title, description, actions }: HeaderProps) {
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (data: {
+          authenticated?: boolean;
+          user?: { name: string; username: string; role: string };
+          permissions?: string[];
+        } | null) => {
+          if (!cancelled && data?.authenticated && data.user) {
+            setCurrentUser({
+              name: data.user.name,
+              username: data.user.username,
+              role: data.user.role,
+              permissions: data.permissions || [],
+            });
+          }
+        }
+      )
+      .catch(() => {
+        // Avatar just falls back to a generic icon; nothing else depends on this.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -276,23 +312,32 @@ export function Header({ title, description, actions }: HeaderProps) {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
+            title={currentUser?.name}
             className="flex items-center justify-center w-8 h-8 rounded-full bg-owly-primary text-white text-sm font-medium hover:bg-owly-primary-dark transition-colors"
           >
-            A
+            {currentUser?.name?.trim()?.charAt(0).toUpperCase() || "?"}
           </button>
 
           {userMenuOpen && (
             <div className="absolute right-0 mt-2 w-48 bg-owly-surface border border-owly-border rounded-lg shadow-lg py-1 z-50 animate-scale-in transition-theme">
-              <button
-                onClick={() => {
-                  setUserMenuOpen(false);
-                  router.push("/settings");
-                }}
-                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-owly-text hover:bg-owly-primary-50 transition-colors"
-              >
-                <User className="h-4 w-4" />
-                Profile & Settings
-              </button>
+              {currentUser && (
+                <div className="px-4 py-2 border-b border-owly-border">
+                  <p className="text-sm font-medium text-owly-text truncate">{currentUser.name}</p>
+                  <p className="text-xs text-owly-text-light capitalize">{currentUser.role}</p>
+                </div>
+              )}
+              {currentUser?.permissions.includes("settings:read") && (
+                <button
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    router.push("/settings");
+                  }}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-sm text-owly-text hover:bg-owly-primary-50 transition-colors"
+                >
+                  <User className="h-4 w-4" />
+                  Instance Settings
+                </button>
+              )}
               <div className="border-t border-owly-border my-1" />
               <button
                 onClick={handleLogout}
