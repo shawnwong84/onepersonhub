@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
+import { isUnscoped } from "@/lib/rbac-scope";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 
 export async function GET(request: NextRequest) {
@@ -15,6 +16,12 @@ export async function GET(request: NextRequest) {
     const departmentId = searchParams.get("departmentId");
 
     const where = departmentId ? { departmentId } : {};
+    // Scoped roles (viewer/agent) still need this list for assignment
+    // pickers elsewhere (conversations, tickets, flows), but they don't
+    // need the rest of a teammate's profile - email, phone, expertise,
+    // exact role, active/login status, tokenVersion. Only supervisors/
+    // admins (who actually manage the team) get the full record.
+    const unscoped = await isUnscoped(auth);
 
     const [members, total] = await Promise.all([
       prisma.teamMember.findMany({
@@ -22,12 +29,30 @@ export async function GET(request: NextRequest) {
         orderBy: { name: "asc" },
         skip,
         take,
-
-        include: {
-          department: {
-            select: { id: true, name: true },
-          },
-        },
+        select: unscoped
+          ? {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              role: true,
+              expertise: true,
+              departmentId: true,
+              isAvailable: true,
+              username: true,
+              rbacRole: true,
+              isActive: true,
+              lastLoginAt: true,
+              createdAt: true,
+              updatedAt: true,
+              department: { select: { id: true, name: true } },
+            }
+          : {
+              id: true,
+              name: true,
+              isAvailable: true,
+              department: { select: { id: true, name: true } },
+            },
       }),
       prisma.teamMember.count({ where }),
     ]);

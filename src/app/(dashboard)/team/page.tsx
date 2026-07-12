@@ -37,21 +37,25 @@ interface Department {
   createdAt: string;
 }
 
+// Scoped (viewer/agent) callers get a minimal projection from the API
+// (id/name/isAvailable/department only) - everything else is only present
+// for unscoped (supervisor/admin) callers, who are the only ones this page's
+// management actions (create/edit/issue credentials) are even available to.
 interface Member {
   id: string;
   name: string;
-  email: string;
-  phone: string;
-  role: string;
-  expertise: string;
-  departmentId: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+  expertise?: string;
+  departmentId?: string;
   department: { id: string; name: string };
   isAvailable: boolean;
-  username: string | null;
-  rbacRole: string;
-  isActive: boolean;
-  lastLoginAt: string | null;
-  createdAt: string;
+  username?: string | null;
+  rbacRole?: string;
+  isActive?: boolean;
+  lastLoginAt?: string | null;
+  createdAt?: string;
 }
 
 const RBAC_ROLES = ["viewer", "agent", "supervisor", "admin"] as const;
@@ -389,7 +393,7 @@ function CredentialsForm({
   const [username, setUsername] = useState(member.username || "");
   const [password, setPassword] = useState("");
   const [rbacRole, setRbacRole] = useState(member.rbacRole || "viewer");
-  const [isActive, setIsActive] = useState(member.isActive);
+  const [isActive, setIsActive] = useState(member.isActive ?? true);
 
   const passwordRequired = !hasLogin;
   const passwordTooShort = password.length > 0 && password.length < 8;
@@ -689,12 +693,16 @@ export default function TeamPage() {
       d.description.toLowerCase().includes(search.toLowerCase())
   );
 
+  // A scoped (viewer/agent) caller only gets a minimal projection back from
+  // the API now (name/availability/department) - email/expertise are absent
+  // rather than empty strings for that caller, so these must be optional
+  // chained instead of assumed present.
   const filteredMembers = members.filter(
     (m) =>
       m.name.toLowerCase().includes(search.toLowerCase()) ||
-      m.email.toLowerCase().includes(search.toLowerCase()) ||
-      m.expertise.toLowerCase().includes(search.toLowerCase()) ||
-      m.department.name.toLowerCase().includes(search.toLowerCase())
+      (m.email || "").toLowerCase().includes(search.toLowerCase()) ||
+      (m.expertise || "").toLowerCase().includes(search.toLowerCase()) ||
+      (m.department?.name || "").toLowerCase().includes(search.toLowerCase())
   );
 
   // ---- Render ----
@@ -995,7 +1003,7 @@ export default function TeamPage() {
                             <span
                               className={cn(
                                 "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium capitalize",
-                                getRoleBadge(member.role)
+                                getRoleBadge(member.role || "member")
                               )}
                             >
                               {member.role === "admin" && (
