@@ -11,6 +11,8 @@ import {
 } from "@/lib/auth";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 import { isLockedOut, recordFailedLogin, clearLoginAttempts } from "@/lib/login-lockout";
+import { getPermissionsForRole } from "@/lib/rbac";
+import { isUnscoped } from "@/lib/rbac-scope";
 
 // POST /api/auth - Login or Setup
 export async function POST(request: NextRequest) {
@@ -179,9 +181,19 @@ export async function GET() {
     return NextResponse.json({ authenticated: false, setupRequired: false });
   }
 
+  // Sidebar/nav filtering needs to know what this specific user can access -
+  // computed from the live (editable) role/permission tables, not a
+  // hardcoded assumption, so it stays correct after an admin edits a role.
+  const [permissions, unscoped] = await Promise.all([
+    getPermissionsForRole(user.role),
+    isUnscoped({ userId: user.id, role: user.role, userType: user.userType }),
+  ]);
+
   return NextResponse.json({
     authenticated: true,
     setupRequired: false,
     user,
+    permissions,
+    isUnscoped: unscoped,
   });
 }

@@ -33,61 +33,73 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { getModuleIcon } from "@/lib/marketplace/icon-map";
+import type { Permission } from "@/lib/rbac";
 
 const COLLAPSED_SECTIONS_KEY = "owly-sidebar-collapsed-sections";
 const COLLAPSED_KEY = "owly-sidebar-collapsed";
 
+export interface NavItem {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+  // Undefined = visible to everyone (e.g. Dashboard, API Docs) - everything
+  // else is hidden unless the current user's live (editable) permission set
+  // includes this. Checked against /api/auth's `permissions` field, not a
+  // hardcoded role list, so this stays correct after an admin edits a role.
+  permission?: Permission;
+}
+
 export interface NavSection {
   title?: string;
-  items: { name: string; href: string; icon: React.ElementType }[];
+  items: NavItem[];
 }
 
 export const NAV_SECTIONS: NavSection[] = [
   {
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
-      { name: "Conversations", href: "/conversations", icon: MessageSquare },
-      { name: "Approvals", href: "/approvals", icon: ShieldCheck },
-      { name: "Customers", href: "/customers", icon: Contact },
-      { name: "Tickets", href: "/tickets", icon: Ticket },
-      { name: "Reporter", href: "/reporter", icon: Bot },
+      { name: "Conversations", href: "/conversations", icon: MessageSquare, permission: "conversations:read" },
+      { name: "Approvals", href: "/approvals", icon: ShieldCheck, permission: "conversations:read" },
+      { name: "Customers", href: "/customers", icon: Contact, permission: "customers:read" },
+      { name: "Tickets", href: "/tickets", icon: Ticket, permission: "tickets:read" },
+      { name: "Reporter", href: "/reporter", icon: Bot, permission: "module:read" },
     ],
   },
   {
     title: "Knowledge",
     items: [
-      { name: "Knowledge Base", href: "/knowledge", icon: BookOpen },
-      { name: "Canned Responses", href: "/canned-responses", icon: Zap },
-      { name: "Agents", href: "/agents", icon: Bot },
-      { name: "Automation", href: "/automation", icon: Workflow },
-      { name: "Flows", href: "/flows", icon: GitBranch },
-      { name: "Business Hours", href: "/business-hours", icon: Clock },
+      { name: "Knowledge Base", href: "/knowledge", icon: BookOpen, permission: "knowledge:read" },
+      { name: "Canned Responses", href: "/canned-responses", icon: Zap, permission: "canned:read" },
+      { name: "Agents", href: "/agents", icon: Bot, permission: "agents:read" },
+      { name: "Automation", href: "/automation", icon: Workflow, permission: "automation:read" },
+      { name: "Flows", href: "/flows", icon: GitBranch, permission: "automation:read" },
+      { name: "Business Hours", href: "/business-hours", icon: Clock, permission: "business-hours:read" },
     ],
   },
   {
     title: "Team",
     items: [
-      { name: "Team", href: "/team", icon: Users },
-      { name: "SLA Rules", href: "/sla", icon: Timer },
+      { name: "Team", href: "/team", icon: Users, permission: "team:read" },
+      { name: "SLA Rules", href: "/sla", icon: Timer, permission: "sla:read" },
     ],
   },
   {
     title: "Channels",
     items: [
-      { name: "Channels", href: "/channels", icon: Radio },
-      { name: "Webhooks", href: "/webhooks", icon: Webhook },
+      { name: "Channels", href: "/channels", icon: Radio, permission: "channels:read" },
+      { name: "Webhooks", href: "/webhooks", icon: Webhook, permission: "webhooks:read" },
     ],
   },
   {
     title: "System",
     items: [
-      { name: "Marketplace", href: "/marketplace", icon: Store },
-      { name: "Analytics", href: "/analytics", icon: BarChart3 },
-      { name: "Token Usage", href: "/token-usage", icon: Coins },
-      { name: "Activity Log", href: "/activity", icon: ScrollText },
-      { name: "Administration", href: "/admin", icon: Shield },
+      { name: "Marketplace", href: "/marketplace", icon: Store, permission: "marketplace:read" },
+      { name: "Analytics", href: "/analytics", icon: BarChart3, permission: "analytics:read" },
+      { name: "Token Usage", href: "/token-usage", icon: Coins, permission: "analytics:read" },
+      { name: "Activity Log", href: "/activity", icon: ScrollText, permission: "activity:read" },
+      { name: "Administration", href: "/admin", icon: Shield, permission: "admin:read" },
       { name: "API Docs", href: "/api-docs", icon: FileCode },
-      { name: "Settings", href: "/settings", icon: Settings },
+      { name: "Settings", href: "/settings", icon: Settings, permission: "settings:read" },
     ],
   },
 ];
@@ -99,11 +111,33 @@ interface InstalledModule {
   isEnabled: boolean;
 }
 
+// Items with no `permission` are always visible (Dashboard, API Docs,
+// installed-module links). `permissions === null` means the fetch hasn't
+// resolved yet, so gated items stay hidden rather than flashing visible
+// then disappearing. Drops any section left with zero visible items so an
+// empty section header doesn't render.
+export function filterSectionsByPermission(
+  sections: NavSection[],
+  permissions: Set<string> | null
+): NavSection[] {
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => !item.permission || (permissions !== null && permissions.has(item.permission))
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [installedModules, setInstalledModules] = useState<InstalledModule[]>([]);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  // null = not loaded yet, so every gated item stays hidden until we know
+  // for sure rather than flashing then disappearing once permissions arrive.
+  const [permissions, setPermissions] = useState<Set<string> | null>(null);
   // Icon-only mode tooltips are portaled to <body> instead of rendered
   // inline: the nav list scrolls (overflow-y-auto), and per the CSS spec an
   // element can't have overflow-x: visible alongside overflow-y: auto - the
@@ -165,20 +199,42 @@ export function Sidebar() {
     };
   }, [pathname]);
 
-  const navSections = useMemo(() => {
-    if (installedModules.length === 0) return NAV_SECTIONS;
-    const moduleSection: NavSection = {
-      title: "Modules",
-      items: installedModules.map((module) => ({
-        name: module.name,
-        href: `/modules/${module.slug}`,
-        icon: getModuleIcon(module.iconName),
-      })),
+  useEffect(() => {
+    let cancelled = false;
+    // Re-fetched on every route change (like the modules list above) so a
+    // permission an admin just changed takes effect without a full reload.
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { permissions?: string[] } | null) => {
+        if (!cancelled && data?.permissions) {
+          setPermissions(new Set(data.permissions));
+        }
+      })
+      .catch(() => {
+        // Nav stays usable without permission data; keep the last known set.
+      });
+    return () => {
+      cancelled = true;
     };
-    // Pinned right after the ungrouped Home section - modules are a primary
-    // workspace, not an afterthought buried near the bottom.
-    return [NAV_SECTIONS[0], moduleSection, ...NAV_SECTIONS.slice(1)];
-  }, [installedModules]);
+  }, [pathname]);
+
+  const navSections = useMemo(() => {
+    let sections = NAV_SECTIONS;
+    if (installedModules.length > 0) {
+      const moduleSection: NavSection = {
+        title: "Modules",
+        items: installedModules.map((module) => ({
+          name: module.name,
+          href: `/modules/${module.slug}`,
+          icon: getModuleIcon(module.iconName),
+        })),
+      };
+      // Pinned right after the ungrouped Home section - modules are a
+      // primary workspace, not an afterthought buried near the bottom.
+      sections = [NAV_SECTIONS[0], moduleSection, ...NAV_SECTIONS.slice(1)];
+    }
+    return filterSectionsByPermission(sections, permissions);
+  }, [installedModules, permissions]);
 
   return (
     <aside

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Bot, Database, LayoutDashboard, MessageSquare, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NAV_SECTIONS } from "@/components/layout/sidebar";
+import { NAV_SECTIONS, filterSectionsByPermission } from "@/components/layout/sidebar";
 import { getModuleIcon } from "@/lib/marketplace/icon-map";
 
 interface InstalledModule {
@@ -26,6 +26,7 @@ export function MobileNav() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const [installedModules, setInstalledModules] = useState<InstalledModule[]>([]);
+  const [permissions, setPermissions] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     setMoreOpen(false);
@@ -42,6 +43,23 @@ export function MobileNav() {
       cancelled = true;
     };
   }, [pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { permissions?: string[] } | null) => {
+        if (!cancelled && data?.permissions) {
+          setPermissions(new Set(data.permissions));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
+
+  const visibleSections = filterSectionsByPermission(NAV_SECTIONS, permissions);
 
   const isActive = (href: string) =>
     pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -84,7 +102,7 @@ export function MobileNav() {
                 </div>
               </div>
             )}
-            {NAV_SECTIONS.map((section, index) => (
+            {visibleSections.map((section, index) => (
               <div key={index} className="mb-3">
                 {section.title && (
                   <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-owly-text-light">
