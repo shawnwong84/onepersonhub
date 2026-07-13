@@ -24,10 +24,14 @@ describe("RBAC System", () => {
       expect(await hasPermission("agent", "knowledge:create")).toBe(false);
     });
 
-    it("supervisor should have most permissions except admin", async () => {
+    it("supervisor can manage conversations/tickets but not admin-level config", async () => {
+      // Default policy: only admin touches admin-level configuration:
+      // non-admin roles (including supervisor) default to
+      // conversations/tickets/reporter only, editable per-role afterward.
       expect(await hasPermission("supervisor", "conversations:delete")).toBe(true);
-      expect(await hasPermission("supervisor", "knowledge:create")).toBe(true);
-      expect(await hasPermission("supervisor", "webhooks:read")).toBe(true);
+      expect(await hasPermission("supervisor", "tickets:delete")).toBe(true);
+      expect(await hasPermission("supervisor", "knowledge:create")).toBe(false);
+      expect(await hasPermission("supervisor", "webhooks:read")).toBe(false);
       expect(await hasPermission("supervisor", "admin:create")).toBe(false);
       expect(await hasPermission("supervisor", "settings:update")).toBe(false);
     });
