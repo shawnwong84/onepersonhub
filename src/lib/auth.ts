@@ -13,7 +13,6 @@ function getJwtSecret(): string {
   return secret || "test-only-fallback-secret";
 }
 
-const JWT_SECRET = getJwtSecret();
 const TOKEN_NAME = "owly-token";
 
 function getSessionLifetimeDays(): number {
@@ -54,12 +53,12 @@ export function generateToken(
   userType: UserType = "owner",
   tokenVersion = 0
 ): string {
-  return jwt.sign({ userId, companyId, role, userType, tokenVersion }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY_SECONDS });
+  return jwt.sign({ userId, companyId, role, userType, tokenVersion }, getJwtSecret(), { expiresIn: TOKEN_EXPIRY_SECONDS });
 }
 
 export function verifyToken(token: string): TokenPayload | null {
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
+    const payload = jwt.verify(token, getJwtSecret()) as TokenPayload;
     // Tokens issued before member login/tokenVersion existed carry neither field.
     return { ...payload, userType: payload.userType || "owner", tokenVersion: payload.tokenVersion ?? 0 };
   } catch {
