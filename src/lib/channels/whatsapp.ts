@@ -454,6 +454,11 @@ async function initializeWhatsAppClient(): Promise<void> {
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
         "--disable-gpu",
+        // Chromium's crash-reporter subprocess (crashpad_handler) fails to
+        // launch in minimal/constrained Docker containers ("--database is
+        // required" / "recvmsg: Connection reset by peer") - disabling it
+        // avoids spawning that subprocess at all. See https://pptr.dev/troubleshooting
+        "--disable-crash-reporter",
       ],
     },
   });

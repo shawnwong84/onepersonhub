@@ -73,7 +73,10 @@ export async function connectWhatsAppAccount(accountId: string): Promise<void> {
       authStrategy: new LocalAuth({ clientId: `account-${accountId}`, dataPath: ".wwebjs_auth" }),
       puppeteer: {
         headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        // "--disable-crash-reporter" avoids the crashpad_handler subprocess,
+        // which fails to launch in minimal/constrained Docker containers -
+        // see the matching comment in src/lib/channels/whatsapp.ts.
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-crash-reporter"],
       },
     });
 
