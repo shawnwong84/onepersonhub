@@ -71,7 +71,13 @@ COPY --from=builder /app/prisma.config.ts ./
 COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/next.config.ts ./
 
-RUN chown -R nextjs:nodejs /app
+# Docker seeds a fresh named volume's ownership from whatever already exists
+# at that path in the image at first mount. These two directories are only
+# ever created lazily at runtime by the app itself, so without pre-creating
+# them here, the whatsapp_auth/rag_uploads volumes mount in as root:root -
+# and the container runs as the non-root "nextjs" user, so it can't write to
+# them ("EACCES: permission denied, mkdir '/app/.wwebjs_auth/session'").
+RUN mkdir -p /app/.wwebjs_auth /app/.rag_uploads && chown -R nextjs:nodejs /app
 
 USER nextjs
 
