@@ -62,3 +62,33 @@ export function demoRequestThankYouEmailHtml(name: string): string {
     </div>
   `.trim();
 }
+
+export function contactMessageInternalEmailHtml(input: {
+  name: string;
+  email: string;
+  message: string;
+}): string {
+  const name = escapeHtml(input.name);
+  const email = escapeHtml(input.email);
+  const message = escapeHtml(input.message);
+  return `
+    <div style="font-family: -apple-system, Segoe UI, sans-serif; max-width: 480px; margin: 0 auto; color: #18181b;">
+      <p style="font-size: 20px; font-weight: 600; margin-bottom: 16px;">New contact message</p>
+      <p style="font-size: 15px; line-height: 1.6;"><strong>Name:</strong> ${name}</p>
+      <p style="font-size: 15px; line-height: 1.6;"><strong>Email:</strong> ${email}</p>
+      <p style="font-size: 15px; line-height: 1.6;"><strong>Message:</strong><br />${message}</p>
+    </div>
+  `.trim();
+}
+
+export function contactThankYouEmailHtml(name: string): string {
+  return `
+    <div style="font-family: -apple-system, Segoe UI, sans-serif; max-width: 480px; margin: 0 auto; color: #18181b;">
+      <p style="font-size: 20px; font-weight: 600; margin-bottom: 16px;">Thanks for reaching out, ${escapeHtml(name)}.</p>
+      <p style="font-size: 15px; line-height: 1.6;">
+        We got your message and a real person from the Paperhuman team will reply shortly.
+      </p>
+      <p style="font-size: 13px; color: #71717a; margin-top: 32px;">hello@paperhuman.im</p>
+    </div>
+  `.trim();
+}

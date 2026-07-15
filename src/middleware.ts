@@ -161,6 +161,7 @@ export async function middleware(request: NextRequest) {
     "/api/auth",
     "/api/register",
     "/api/demo-request",
+    "/api/contact",
     "/api/health",
     "/api/openapi.json",
   ];

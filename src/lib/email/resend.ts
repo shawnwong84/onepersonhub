@@ -33,7 +33,14 @@ export async function sendTransactionalEmail({ to, subject, html }: SendTransact
     return;
   }
   try {
-    await resend.emails.send({ from: EMAIL_FROM, to, subject, html });
+    // The Resend SDK does not throw for API-level errors (bad API key,
+    // unverified sending domain, etc.) - it resolves with { data: null,
+    // error }. Only network-level failures reject the promise. Both must be
+    // checked, or a misconfigured account fails silently forever.
+    const result = await resend.emails.send({ from: EMAIL_FROM, to, subject, html });
+    if (result.error) {
+      logger.error("Failed to send transactional email", result.error, { to, subject });
+    }
   } catch (error) {
     logger.error("Failed to send transactional email", error, { to, subject });
   }
