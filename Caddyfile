@@ -1,0 +1,12 @@
+{
+	email {$ACME_EMAIL}
+}
+
+www.paperhuman.im {
+	redir https://paperhuman.im{uri} permanent
+}
+
+paperhuman.im {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
