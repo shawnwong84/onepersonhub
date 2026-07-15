@@ -101,6 +101,7 @@ export async function POST(
 
     const record = await prisma.moduleRecord.create({
       data: {
+        companyId: auth.companyId,
         moduleId: installed.module.id,
         recordType,
         title,
@@ -118,6 +119,7 @@ export async function POST(
         updatedBy: auth.name || auth.username,
         events: {
           create: {
+            companyId: auth.companyId,
             action: "created",
             description: `Created ${recordType}: ${title}`,
             createdBy: auth.name || auth.username,

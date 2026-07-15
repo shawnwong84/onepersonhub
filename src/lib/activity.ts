@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { currentCompanyId } from "@/lib/tenant-context";
 import type { NextRequest } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -98,6 +99,7 @@ export async function logActivity(
   try {
     await prisma.activityLog.create({
       data: {
+        companyId: currentCompanyId(),
         action: payload.action,
         entity: payload.entity,
         entityId: payload.entityId || null,

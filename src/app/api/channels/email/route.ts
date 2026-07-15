@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   startEmailListener,
   stopEmailListener,
@@ -7,19 +7,26 @@ import {
 } from "@/lib/channels/email";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request, "channels:read");
+  if (!isAuthenticated(auth)) return auth;
+
   const status = getEmailStatus();
   return NextResponse.json(status);
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request, "channels:update");
+  if (!isAuthenticated(auth)) return auth;
+
   const body = await request.json();
   const { action } = body;
 
   if (action === "connect") {
-    await startEmailListener();
+    await startEmailListener(auth.companyId);
     const status = getEmailStatus();
     await logActivity({
       action: "channel.email_listener_started",
@@ -45,9 +52,10 @@ export async function POST(request: Request) {
     const result = await testEmailConnection();
     if (!result.ok) {
       await prisma.channel.upsert({
-        where: { type: "email" },
+        where: { companyId_type: { companyId: auth.companyId, type: "email" } },
         update: { status: "disconnected" },
         create: {
+          companyId: auth.companyId,
           type: "email",
           isActive: false,
           config: {},
@@ -64,13 +72,14 @@ export async function POST(request: Request) {
     }
 
     try {
-      await startEmailListener();
+      await startEmailListener(auth.companyId);
     } catch (error) {
       logger.error("Email test passed but listener failed to start:", error);
       await prisma.channel.upsert({
-        where: { type: "email" },
+        where: { companyId_type: { companyId: auth.companyId, type: "email" } },
         update: { status: "disconnected" },
         create: {
+          companyId: auth.companyId,
           type: "email",
           isActive: false,
           config: {},
@@ -91,9 +100,10 @@ export async function POST(request: Request) {
     }
 
     const channel = await prisma.channel.upsert({
-      where: { type: "email" },
+      where: { companyId_type: { companyId: auth.companyId, type: "email" } },
       update: { isActive: true, status: "connected" },
       create: {
+        companyId: auth.companyId,
         type: "email",
         isActive: true,
         config: {},
@@ -115,7 +125,10 @@ export async function POST(request: Request) {
   return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 }
 
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
+  const auth = await requireAuth(request, "channels:update");
+  if (!isAuthenticated(auth)) return auth;
+
   try {
     const body = await request.json();
     const { isActive, config, status } = body;
@@ -127,13 +140,14 @@ export async function PUT(request: Request) {
         : status ?? undefined;
 
     const channel = await prisma.channel.upsert({
-      where: { type: "email" },
+      where: { companyId_type: { companyId: auth.companyId, type: "email" } },
       update: {
         isActive: typeof isActive === "boolean" ? isActive : undefined,
         config: emailConfig,
         status: nextStatus,
       },
       create: {
+        companyId: auth.companyId,
         type: "email",
         isActive: typeof isActive === "boolean" ? isActive : false,
         config: emailConfig,
@@ -142,7 +156,7 @@ export async function PUT(request: Request) {
     });
 
     await prisma.settings.upsert({
-      where: { id: "default" },
+      where: { companyId: auth.companyId },
       update: {
         smtpHost: String(emailConfig.smtpHost ?? ""),
         smtpPort: parseInt(String(emailConfig.smtpPort ?? "587"), 10) || 587,
@@ -155,7 +169,7 @@ export async function PUT(request: Request) {
         imapPass: String(emailConfig.imapPass ?? ""),
       },
       create: {
-        id: "default",
+        companyId: auth.companyId,
         smtpHost: String(emailConfig.smtpHost ?? ""),
         smtpPort: parseInt(String(emailConfig.smtpPort ?? "587"), 10) || 587,
         smtpUser: String(emailConfig.smtpUser ?? ""),
@@ -170,16 +184,16 @@ export async function PUT(request: Request) {
 
     if (isActive === true) {
       try {
-        await startEmailListener();
+        await startEmailListener(auth.companyId);
         await prisma.channel.update({
-          where: { type: "email" },
+          where: { companyId_type: { companyId: auth.companyId, type: "email" } },
           data: { status: "connected" },
         });
         channel.status = "connected";
       } catch (error) {
         logger.error("Failed to start email listener after saving settings:", error);
         await prisma.channel.update({
-          where: { type: "email" },
+          where: { companyId_type: { companyId: auth.companyId, type: "email" } },
           data: { status: "disconnected" },
         });
         channel.status = "disconnected";
@@ -201,6 +215,7 @@ export async function PUT(request: Request) {
         credentials: emailConfig,
       },
       create: {
+        companyId: auth.companyId,
         channel: "email",
         identifier: "default",
         name: "Primary Email",

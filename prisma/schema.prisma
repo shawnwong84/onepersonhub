@@ -7,10 +7,27 @@ datasource db {
   provider = "postgresql"
 }
 
+// ==================== TENANCY ====================
+// Every other model below is scoped to a Company via a plain `companyId`
+// scalar column (no Prisma-level relation object - these are enforced via a
+// real FK + ON DELETE CASCADE at the SQL level in the migration, and via the
+// tenant-scoping Prisma Client Extension in src/lib/prisma.ts at the
+// application level; declaring 53 relation fields here would be pure
+// boilerplate for data we only ever filter by, never traverse into from a
+// child record).
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  status    String   @default("active") // active | suspended
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // ==================== SETTINGS ====================
 
 model Settings {
-  id                           String   @id @default("default")
+  companyId                    String   @id
   businessName                 String   @default("My Business")
   businessDesc                 String   @default("")
   welcomeMessage               String   @default("Hello! How can I help you today?")
@@ -53,7 +70,12 @@ model Settings {
 
 model Admin {
   id           String   @id @default(uuid())
+  companyId    String
+  // Globally unique (not per-company) - this is what makes login resolution
+  // work without subdomain routing: the company is looked up from whichever
+  // company this username belongs to.
   username     String   @unique
+  email        String   @unique
   password     String
   name         String   @default("Admin")
   role         String   @default("admin")
@@ -62,25 +84,31 @@ model Admin {
   tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([companyId])
 }
 
 // ==================== KNOWLEDGE BASE ====================
 
 model Category {
   id          String                @id @default(uuid())
+  companyId   String
   name        String
   description String                @default("")
   icon        String                @default("folder")
-  color       String                @default("#4A7C9B")
+  color       String                @default("#F97316")
   sortOrder   Int                   @default(0)
   entries     KnowledgeEntry[]
   agentScopes AgentKnowledgeScope[]
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
+
+  @@index([companyId])
 }
 
 model KnowledgeEntry {
   id          String                @id @default(uuid())
+  companyId   String
   categoryId  String
   category    Category              @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   title       String
@@ -94,11 +122,13 @@ model KnowledgeEntry {
   chunks      KnowledgeChunk[]
   agentScopes AgentKnowledgeScope[]
 
+  @@index([companyId])
   @@index([categoryId])
 }
 
 model KnowledgeDocument {
   id            String                  @id @default(uuid())
+  companyId     String
   categoryId    String?
   title         String
   sourceType    String                  @default("upload")
@@ -122,6 +152,7 @@ model KnowledgeDocument {
   chunks        KnowledgeChunk[]
   agentScopes   AgentKnowledgeScope[]
 
+  @@index([companyId])
   @@index([categoryId])
   @@index([sourceType])
   @@index([status])
@@ -132,6 +163,7 @@ model KnowledgeDocument {
 
 model KnowledgeIngestionRun {
   id             String            @id @default(uuid())
+  companyId      String
   documentId     String
   document       KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   status         String            @default("queued")
@@ -146,6 +178,7 @@ model KnowledgeIngestionRun {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
+  @@index([companyId])
   @@index([documentId])
   @@index([status])
   @@index([stage])
@@ -154,6 +187,7 @@ model KnowledgeIngestionRun {
 
 model KnowledgeChunk {
   id               String            @id @default(uuid())
+  companyId        String
   documentId       String
   document         KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   knowledgeEntryId String?
@@ -172,6 +206,7 @@ model KnowledgeChunk {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
+  @@index([companyId])
   @@index([documentId])
   @@index([knowledgeEntryId])
   @@index([sourceUrl])
@@ -179,6 +214,7 @@ model KnowledgeChunk {
 
 model WebsiteSource {
   id              String    @id @default(uuid())
+  companyId       String
   categoryId      String?
   url             String
   mode            String    @default("single_url")
@@ -192,6 +228,7 @@ model WebsiteSource {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  @@index([companyId])
   @@index([categoryId])
   @@index([url])
   @@index([lastStatus])
@@ -199,6 +236,7 @@ model WebsiteSource {
 
 model TokenUsage {
   id               String   @id @default(uuid())
+  companyId        String
   provider         String
   model            String
   feature          String
@@ -213,6 +251,7 @@ model TokenUsage {
   metadata         Json     @default("{}")
   createdAt        DateTime @default(now())
 
+  @@index([companyId])
   @@index([feature])
   @@index([operation])
   @@index([entityType, entityId])
@@ -223,6 +262,7 @@ model TokenUsage {
 
 model Department {
   id          String       @id @default(uuid())
+  companyId   String
   name        String
   description String       @default("")
   email       String       @default("")
@@ -231,38 +271,47 @@ model Department {
   agents      Agent[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+
+  @@index([companyId])
 }
 
 // Roles referenced by TeamMember.rbacRole / Admin.role (plain strings, no FK -
 // matches this app's existing loose-coupling convention for role fields).
-// The 4 built-in roles (viewer/agent/supervisor/admin) are seeded by
-// migration and kept forever; isUnscoped replaces the old hardcoded
-// viewer<agent<supervisor<admin hierarchy check with an explicit flag so
-// custom roles don't need a position in a ladder that doesn't fit them.
+// Per-company: each company gets its own independently-editable copies of
+// the 4 built-in roles (viewer/agent/supervisor/admin), seeded at
+// registration - not shared global templates, so one company editing
+// "agent" can never change behavior for another company.
 model Role {
   id          String           @id @default(uuid())
-  name        String           @unique
+  companyId   String
+  name        String
   label       String
   isBuiltIn   Boolean          @default(false)
   isUnscoped  Boolean          @default(false)
   permissions RolePermission[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 model RolePermission {
   id         String   @id @default(uuid())
+  companyId  String
   roleId     String
   role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission String
   createdAt  DateTime @default(now())
 
   @@unique([roleId, permission])
+  @@index([companyId])
   @@index([roleId])
 }
 
 model TeamMember {
   id           String     @id @default(uuid())
+  companyId    String
   name         String
   email        String
   phone        String     @default("")
@@ -271,7 +320,8 @@ model TeamMember {
   departmentId String
   department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   isAvailable  Boolean    @default(true)
-  // Login credentials (null until an admin issues them)
+  // Login credentials (null until an admin issues them). Globally unique
+  // (not per-company) - same login-resolution reasoning as Admin.username.
   username     String?    @unique
   password     String?
   rbacRole     String     @default("viewer")
@@ -286,11 +336,13 @@ model TeamMember {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  @@index([companyId])
   @@index([departmentId])
 }
 
 model ReporterChatThread {
   id        String                @id @default(uuid())
+  companyId String
   userId    String
   userType  String                @default("member") // owner | member
   title     String                @default("Reporter Agent")
@@ -298,11 +350,13 @@ model ReporterChatThread {
   createdAt DateTime              @default(now())
   updatedAt DateTime              @updatedAt
 
+  @@index([companyId])
   @@index([userId])
 }
 
 model ReporterChatMessage {
   id        String             @id @default(uuid())
+  companyId String
   threadId  String
   thread    ReporterChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   role      String // user | reporter
@@ -310,11 +364,13 @@ model ReporterChatMessage {
   metadata  Json               @default("{}")
   createdAt DateTime           @default(now())
 
+  @@index([companyId])
   @@index([threadId])
 }
 
 model ModuleAssignment {
   id           String     @id @default(uuid())
+  companyId    String
   teamMemberId String
   teamMember   TeamMember @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
   moduleSlug   String
@@ -323,6 +379,7 @@ model ModuleAssignment {
   createdAt    DateTime   @default(now())
 
   @@unique([teamMemberId, moduleSlug])
+  @@index([companyId])
   @@index([teamMemberId])
   @@index([moduleSlug])
 }
@@ -331,6 +388,7 @@ model ModuleAssignment {
 
 model Conversation {
   id               String            @id @default(uuid())
+  companyId        String
   channel          String
   customerName     String            @default("Unknown")
   customerContact  String            @default("")
@@ -354,6 +412,7 @@ model Conversation {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
+  @@index([companyId])
   @@index([channel])
   @@index([status])
   @@index([customerContact])
@@ -370,6 +429,7 @@ model Conversation {
 
 model Message {
   id             String       @id @default(uuid())
+  companyId      String
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role           String
@@ -379,6 +439,7 @@ model Message {
   toolCalls      Json?
   createdAt      DateTime     @default(now())
 
+  @@index([companyId])
   @@index([conversationId])
   @@index([conversationId, createdAt])
 }
@@ -387,6 +448,7 @@ model Message {
 
 model Ticket {
   id             String        @id @default(uuid())
+  companyId      String
   conversationId String?
   conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   departmentId   String?
@@ -401,6 +463,7 @@ model Ticket {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
+  @@index([companyId])
   @@index([status])
   @@index([departmentId])
   @@index([assignedToId])
@@ -410,26 +473,33 @@ model Ticket {
 
 model Tag {
   id            String            @id @default(uuid())
-  name          String            @unique
-  color         String            @default("#4A7C9B")
+  companyId     String
+  name          String
+  color         String            @default("#F97316")
   conversations ConversationTag[]
   createdAt     DateTime          @default(now())
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 model ConversationTag {
   id             String       @id @default(uuid())
+  companyId      String
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   tagId          String
   tag            Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, tagId])
+  @@index([companyId])
 }
 
 // ==================== CALL LOGS ====================
 
 model CallLog {
   id        String   @id @default(uuid())
+  companyId String
   callSid   String   @unique
   from      String
   to        String
@@ -439,22 +509,29 @@ model CallLog {
   summary   String   @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([companyId])
 }
 
 // ==================== CHANNELS ====================
 
 model Channel {
   id        String   @id @default(uuid())
-  type      String   @unique
+  companyId String
+  type      String
   isActive  Boolean  @default(false)
   config    Json     @default("{}")
   status    String   @default("disconnected")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([companyId, type])
+  @@index([companyId])
 }
 
 model Agent {
   id                     String                @id @default(uuid())
+  companyId              String
   name                   String
   description            String                @default("")
   status                 String                @default("active")
@@ -477,12 +554,14 @@ model Agent {
   tools                  AgentTool[]
   conversations          Conversation[]
 
+  @@index([companyId])
   @@index([status])
   @@index([escalationDepartmentId])
 }
 
 model ChannelAccount {
   id             String                @id @default(uuid())
+  companyId      String
   channel        String
   name           String
   identifier     String
@@ -502,6 +581,7 @@ model ChannelAccount {
   conversations  Conversation[]
 
   @@unique([channel, identifier])
+  @@index([companyId])
   @@index([channel])
   @@index([identifier])
   @@index([defaultAgentId])
@@ -510,6 +590,7 @@ model ChannelAccount {
 
 model AgentChannelAccount {
   id               String         @id @default(uuid())
+  companyId        String
   agentId          String
   agent            Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
   channelAccountId String
@@ -521,6 +602,7 @@ model AgentChannelAccount {
   updatedAt        DateTime       @updatedAt
 
   @@unique([agentId, channelAccountId])
+  @@index([companyId])
   @@index([agentId])
   @@index([channelAccountId])
   @@index([priority])
@@ -528,6 +610,7 @@ model AgentChannelAccount {
 
 model AgentKnowledgeScope {
   id         String             @id @default(uuid())
+  companyId  String
   agentId    String
   agent      Agent              @relation(fields: [agentId], references: [id], onDelete: Cascade)
   categoryId String?
@@ -541,6 +624,7 @@ model AgentKnowledgeScope {
   createdAt  DateTime           @default(now())
   updatedAt  DateTime           @updatedAt
 
+  @@index([companyId])
   @@index([agentId])
   @@index([categoryId])
   @@index([entryId])
@@ -549,6 +633,7 @@ model AgentKnowledgeScope {
 
 model AgentWorkflow {
   id        String   @id @default(uuid())
+  companyId String
   agentId   String
   agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   flowId    String
@@ -559,6 +644,7 @@ model AgentWorkflow {
   updatedAt DateTime @updatedAt
 
   @@unique([agentId, flowId])
+  @@index([companyId])
   @@index([agentId])
   @@index([flowId])
   @@index([priority])
@@ -566,6 +652,7 @@ model AgentWorkflow {
 
 model AgentTool {
   id               String   @id @default(uuid())
+  companyId        String
   agentId          String
   agent            Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   toolType         String
@@ -577,6 +664,7 @@ model AgentTool {
   updatedAt        DateTime @updatedAt
 
   @@unique([agentId, toolType, toolName])
+  @@index([companyId])
   @@index([agentId])
   @@index([toolType])
 }
@@ -585,11 +673,13 @@ model AgentTool {
 
 model Schedule {
   id           String @id @default(uuid())
+  companyId    String
   teamMemberId String
   dayOfWeek    Int
   startTime    String
   endTime      String
 
+  @@index([companyId])
   @@index([teamMemberId])
   @@index([dayOfWeek])
 }
@@ -598,6 +688,7 @@ model Schedule {
 
 model Webhook {
   id          String            @id @default(uuid())
+  companyId   String
   name        String
   description String            @default("")
   url         String
@@ -608,10 +699,13 @@ model Webhook {
   deliveries  WebhookDelivery[]
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+
+  @@index([companyId])
 }
 
 model WebhookDelivery {
   id          String    @id @default(uuid())
+  companyId   String
   webhookId   String
   webhook     Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
   event       String
@@ -624,6 +718,7 @@ model WebhookDelivery {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  @@index([companyId])
   @@index([webhookId])
   @@index([status, nextRetryAt])
 }
@@ -632,6 +727,7 @@ model WebhookDelivery {
 
 model ActivityLog {
   id          String   @id @default(uuid())
+  companyId   String
   action      String // conversation.created, ticket.assigned, settings.updated, etc.
   entity      String // conversation, ticket, settings, knowledge, team
   entityId    String?
@@ -644,6 +740,7 @@ model ActivityLog {
   userAgent   String?
   createdAt   DateTime @default(now())
 
+  @@index([companyId])
   @@index([entity])
   @@index([createdAt])
 }
@@ -652,6 +749,7 @@ model ActivityLog {
 
 model Notification {
   id             String    @id @default(uuid())
+  companyId      String
   type           String
   title          String
   message        String
@@ -662,6 +760,7 @@ model Notification {
   readAt         DateTime?
   createdAt      DateTime  @default(now())
 
+  @@index([companyId])
   @@index([readAt])
   @@index([createdAt])
   @@index([conversationId])
@@ -672,6 +771,7 @@ model Notification {
 
 model SLARule {
   id                String   @id @default(uuid())
+  companyId         String
   name              String
   description       String   @default("")
   channel           String   @default("all") // all, whatsapp, email, phone
@@ -681,12 +781,15 @@ model SLARule {
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
 }
 
 // ==================== CANNED RESPONSES ====================
 
 model CannedResponse {
   id         String   @id @default(uuid())
+  companyId  String
   title      String
   content    String
   category   String   @default("General")
@@ -695,12 +798,15 @@ model CannedResponse {
   usageCount Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@index([companyId])
 }
 
 // ==================== CUSTOMERS ====================
 
 model Customer {
   id            String         @id @default(uuid())
+  companyId     String
   name          String
   email         String         @default("")
   phone         String         @default("")
@@ -715,6 +821,7 @@ model Customer {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
+  @@index([companyId])
   @@index([email])
   @@index([phone])
   @@index([whatsapp])
@@ -723,12 +830,14 @@ model Customer {
 
 model CustomerNote {
   id         String   @id @default(uuid())
+  companyId  String
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   content    String
   authorName String   @default("Admin")
   createdAt  DateTime @default(now())
 
+  @@index([companyId])
   @@index([customerId])
 }
 
@@ -736,6 +845,7 @@ model CustomerNote {
 
 model AutomationRule {
   id           String   @id @default(uuid())
+  companyId    String
   name         String
   description  String   @default("")
   type         String // auto_route, auto_tag, auto_reply, keyword_alert
@@ -746,12 +856,14 @@ model AutomationRule {
   triggerCount Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([companyId])
 }
 
 // ==================== BUSINESS HOURS ====================
 
 model BusinessHours {
-  id             String  @id @default("default")
+  companyId      String  @id
   enabled        Boolean @default(false)
   timezone       String  @default("UTC")
   monday         String  @default("09:00-18:00") // empty = closed
@@ -768,6 +880,7 @@ model BusinessHours {
 
 model ApiKey {
   id        String    @id @default(uuid())
+  companyId String
   name      String
   key       String    @unique
   isActive  Boolean   @default(true)
@@ -775,6 +888,7 @@ model ApiKey {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  @@index([companyId])
   @@index([key])
 }
 
@@ -782,12 +896,14 @@ model ApiKey {
 
 model InternalNote {
   id             String       @id @default(uuid())
+  companyId      String
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   content        String
   authorName     String       @default("Admin")
   createdAt      DateTime     @default(now())
 
+  @@index([companyId])
   @@index([conversationId])
 }
 
@@ -795,6 +911,7 @@ model InternalNote {
 
 model Campaign {
   id          String    @id @default(uuid())
+  companyId   String
   name        String
   description String    @default("")
   channel     String    @default("email")
@@ -806,12 +923,15 @@ model Campaign {
   sentCount   Int       @default(0)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([companyId])
 }
 
 // ==================== FLOWS ====================
 
 model Flow {
   id             String          @id @default(uuid())
+  companyId      String
   name           String
   description    String          @default("")
   startNodeId    String          @default("")
@@ -828,10 +948,13 @@ model Flow {
   agentWorkflows AgentWorkflow[]
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
+
+  @@index([companyId])
 }
 
 model WorkflowRun {
   id             String            @id @default(uuid())
+  companyId      String
   flowId         String?
   flow           Flow?             @relation(fields: [flowId], references: [id], onDelete: SetNull)
   flowName       String            @default("")
@@ -849,6 +972,7 @@ model WorkflowRun {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
+  @@index([companyId])
   @@index([flowId])
   @@index([conversationId])
   @@index([status])
@@ -857,6 +981,7 @@ model WorkflowRun {
 
 model WorkflowRunStep {
   id         String      @id @default(uuid())
+  companyId  String
   runId      String
   run        WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   nodeId     String      @default("")
@@ -870,6 +995,7 @@ model WorkflowRunStep {
   endedAt    DateTime?
   createdAt  DateTime    @default(now())
 
+  @@index([companyId])
   @@index([runId])
   @@index([status])
   @@index([nodeId])
@@ -877,6 +1003,7 @@ model WorkflowRunStep {
 
 model WorkflowJob {
   id             String    @id @default(uuid())
+  companyId      String
   flowId         String
   flowName       String    @default("")
   conversationId String
@@ -895,6 +1022,7 @@ model WorkflowJob {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  @@index([companyId])
   @@index([status, dueAt])
   @@index([flowId])
   @@index([conversationId])
@@ -904,7 +1032,8 @@ model WorkflowJob {
 
 model BusinessModule {
   id          String         @id @default(uuid())
-  slug        String         @unique
+  companyId   String
+  slug        String
   name        String
   category    String
   description String         @default("")
@@ -921,12 +1050,15 @@ model BusinessModule {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
+  @@unique([companyId, slug])
+  @@index([companyId])
   @@index([category])
   @@index([isInstalled, isEnabled])
 }
 
 model ModuleRecord {
   id             String          @id @default(uuid())
+  companyId      String
   moduleId       String
   module         BusinessModule  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   recordType     String
@@ -948,6 +1080,7 @@ model ModuleRecord {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
+  @@index([companyId])
   @@index([moduleId])
   @@index([recordType])
   @@index([status])
@@ -963,6 +1096,7 @@ model ModuleRecord {
 
 model ModuleRecordEvent {
   id             String       @id @default(uuid())
+  companyId      String
   moduleRecordId String
   moduleRecord   ModuleRecord @relation(fields: [moduleRecordId], references: [id], onDelete: Cascade)
   action         String
@@ -971,6 +1105,7 @@ model ModuleRecordEvent {
   createdBy      String?
   createdAt      DateTime     @default(now())
 
+  @@index([companyId])
   @@index([moduleRecordId])
   @@index([action])
   @@index([createdAt])
@@ -978,6 +1113,7 @@ model ModuleRecordEvent {
 
 model ModuleSignal {
   id             String          @id @default(uuid())
+  companyId      String
   moduleId       String
   module         BusinessModule  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   moduleRecordId String?
@@ -994,10 +1130,75 @@ model ModuleSignal {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
+  @@index([companyId])
   @@index([moduleId])
   @@index([moduleRecordId])
   @@index([signalType])
   @@index([severity])
   @@index([status])
   @@index([createdAt])
+}
+
+// ==================== ERP CONNECTORS ====================
+// Structural framework for SAP / Oracle Fusion / Microsoft 365 / Dynamics
+// 365 Business Central / Odoo integrations. Credential storage + a manual
+// test-connection ping only in this pass - no live data sync yet.
+
+model Connector {
+  id             String    @id @default(uuid())
+  companyId      String
+  provider       String // "sap" | "oracle" | "microsoft365" | "dynamics_bc" | "odoo"
+  name           String
+  authType       String // "oauth2" | "api_key" | "basic_auth"
+  status         String    @default("disconnected") // disconnected | connecting | connected | error
+  isActive       Boolean   @default(true)
+  config         Json      @default("{}") // non-secret: tenantId, instanceUrl, clientId, environment, database...
+  credentials    Json      @default("{}") // secret: apiKey, username/password, clientSecret, accessToken, refreshToken, tokenExpiresAt - encrypted at rest
+  lastTestedAt   DateTime?
+  lastTestResult Json      @default("{}")
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([companyId, provider, name])
+  @@index([companyId])
+  @@index([provider])
+  @@index([status])
+}
+
+model ConnectorOAuthState {
+  id                  String   @id @default(uuid())
+  companyId           String
+  state               String   @unique
+  provider            String
+  connectorId         String? // set when re-authorizing an existing connector
+  pendingName         String?
+  pendingConfig       Json     @default("{}")
+  pendingClientSecret String? // encrypted flat field
+  codeVerifier        String? // PKCE
+  createdBy           String
+  expiresAt           DateTime
+  createdAt           DateTime @default(now())
+
+  @@index([companyId])
+  @@index([expiresAt])
+}
+
+// ==================== BILLING ====================
+// One BillingAccount per Company (PK is companyId itself, no more "default"
+// singleton) - each company's subscription gates its own module quota
+// independently.
+
+model BillingAccount {
+  companyId            String    @id
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  plan                 String? // "free" | "starter" | "growth" | "unlimited"
+  billingCycle         String? // "monthly" | "annual"
+  status               String    @default("none") // none | trialing | active | past_due | canceled | incomplete
+  currentPeriodEnd     DateTime?
+  gracePeriodEndsAt    DateTime?
+  moduleQuotaExceeded  Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }

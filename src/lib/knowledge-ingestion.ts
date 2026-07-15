@@ -3,6 +3,7 @@ import path from "path";
 import { pathToFileURL } from "url";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 import { createNotification } from "@/lib/notifications";
 import { indexKnowledgeEntry } from "@/lib/ai/semantic-search";
@@ -339,6 +340,7 @@ export async function ingestKnowledgeDocument(documentId: string) {
   const logs: IngestionLog[] = [];
   const run = await prisma.knowledgeIngestionRun.create({
     data: {
+      companyId: currentCompanyId(),
       documentId,
       status: "running",
       stage: "extracting",
@@ -351,6 +353,7 @@ export async function ingestKnowledgeDocument(documentId: string) {
 
     const chunks = chunkText(document.extractedText);
     const tokenEstimate = estimateTokens(document.extractedText);
+    const companyId = currentCompanyId();
 
     await prisma.$transaction(async (tx) => {
       await tx.knowledgeChunk.deleteMany({ where: { documentId } });
@@ -359,6 +362,7 @@ export async function ingestKnowledgeDocument(documentId: string) {
         const chunk = chunks[index];
         const entry = await tx.knowledgeEntry.create({
           data: {
+            companyId,
             categoryId: document.categoryId || (await ensureImportedCategory(tx)),
             title:
               chunks.length > 1
@@ -380,6 +384,7 @@ export async function ingestKnowledgeDocument(documentId: string) {
 
         await tx.knowledgeChunk.create({
           data: {
+            companyId,
             documentId,
             knowledgeEntryId: entry.id,
             content: chunk,
@@ -398,6 +403,7 @@ export async function ingestKnowledgeDocument(documentId: string) {
 
       await tx.tokenUsage.create({
         data: {
+          companyId,
           provider: "local",
           model: "token-estimator",
           feature: "knowledge_ingestion",
@@ -413,7 +419,7 @@ export async function ingestKnowledgeDocument(documentId: string) {
 
     await appendRunLog(run.id, logs, "embedding", "Indexing chunks for semantic retrieval.");
 
-    const settings = await prisma.settings.findUnique({ where: { id: "default" } });
+    const settings = await prisma.settings.findUnique({ where: { companyId: currentCompanyId() } });
     if (settings?.aiApiKey) {
       const chunkEntries = await prisma.knowledgeChunk.findMany({
         where: { documentId, knowledgeEntryId: { not: null } },
@@ -433,6 +439,7 @@ export async function ingestKnowledgeDocument(documentId: string) {
 
       await prisma.tokenUsage.create({
         data: {
+          companyId: currentCompanyId(),
           provider: "openai",
           model: "text-embedding-3-small",
           feature: "knowledge_ingestion",
@@ -527,10 +534,11 @@ async function ensureImportedCategory(tx: Pick<typeof prisma, "category">): Prom
 
   const category = await tx.category.create({
     data: {
+      companyId: currentCompanyId(),
       name: "Imported Documents",
       description: "Knowledge generated from uploaded documents and crawled pages.",
       icon: "file-text",
-      color: "#4A7C9B",
+      color: "#F97316",
     },
   });
 
@@ -561,6 +569,7 @@ export async function createKnowledgeDocumentFromText(input: {
 
   return prisma.knowledgeDocument.create({
     data: {
+      companyId: currentCompanyId(),
       ...(input.id ? { id: input.id } : {}),
       categoryId: input.categoryId || null,
       title: input.title.trim(),

@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import OpenAI from "openai";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnscoped } from "@/lib/prisma";
+import { currentCompanyId, setCurrentCompany } from "@/lib/tenant-context";
 import { sendEmail } from "@/lib/channels/email";
 import { emitNewMessage } from "@/lib/realtime";
 import { logger } from "@/lib/logger";
@@ -237,6 +238,7 @@ function findHandledEdgeTargetIndex(
 async function saveCustomerMessage(conversationId: string, content: string) {
   const saved = await prisma.message.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId,
       role: "customer",
       content,
@@ -270,6 +272,7 @@ async function saveWorkflowReply(
 
   const saved = await prisma.message.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId,
       role: "assistant",
       content,
@@ -341,6 +344,44 @@ function renderWorkflowTemplate(
 
   return (template || "").replace(/\{\{([\w.:-]+)\}\}/g, (_, key: string) => {
     return variables[key] ?? "";
+  });
+}
+
+/**
+ * Same substitution as renderWorkflowTemplate, but JSON-escapes each
+ * variable's value before insertion. Needed anywhere a template's raw text
+ * output (e.g. {{previous.output}} from an LLM step, which is itself a
+ * JSON blob) gets embedded inside a JSON string literal in another
+ * template (e.g. moduleRecordData) - naive substitution there produces
+ * invalid JSON the moment the value contains a quote or newline.
+ */
+function renderWorkflowJsonTemplate(
+  template: string | undefined,
+  input: WorkflowRuntimeInput,
+  flowName: string,
+  state?: WorkflowExecutionState
+) {
+  const variables: Record<string, string> = {
+    message: input.message,
+    channel: input.channel,
+    triggerEvent: input.triggerEvent,
+    conversationId: input.conversationId,
+    customerId: input.customerId || "",
+    flowName,
+    "flow.name": flowName,
+    "customer.id": input.customerId || "",
+    "previous.output": state?.previousOutput || "",
+  };
+
+  for (const [nodeId, output] of Object.entries(state?.outputs || {})) {
+    variables[`steps.${nodeId}.output`] = output;
+  }
+
+  return (template || "").replace(/\{\{([\w.:-]+)\}\}/g, (_, key: string) => {
+    const value = variables[key] ?? "";
+    // JSON.stringify a string always yields a quoted, escaped string -
+    // strip the outer quotes since the template already supplies them.
+    return JSON.stringify(value).slice(1, -1);
   });
 }
 
@@ -444,6 +485,7 @@ async function scheduleWorkflowContinuation(
   const dueAt = new Date(Date.now() + getDelayMs(data));
   const job = await prisma.workflowJob.create({
     data: {
+      companyId: currentCompanyId(),
       flowId,
       flowName,
       conversationId: input.conversationId,
@@ -500,8 +542,18 @@ async function scheduleWorkflowContinuation(
 }
 
 async function markTimedOutWorkflowApprovals() {
+  let total = 0;
+  const companies = await prismaUnscoped.company.findMany({ select: { id: true } });
+  for (const company of companies) {
+    setCurrentCompany(company.id);
+    total += await markTimedOutWorkflowApprovalsForCompany();
+  }
+  return total;
+}
+
+async function markTimedOutWorkflowApprovalsForCompany() {
   const settings = await prisma.settings.findUnique({
-    where: { id: "default" },
+    where: { companyId: currentCompanyId() },
     select: { workflowApprovalStaleMinutes: true },
   });
   const staleMinutes = Math.max(1, settings?.workflowApprovalStaleMinutes || 30);
@@ -710,7 +762,7 @@ async function generateWorkflowAiReply(
     messages: [
       {
         role: "system",
-        content: `You are Cosstigo's workflow assistant. Generate one concise customer-service reply for the active conversation. Use only the provided context and do not call tools.\n\nBusiness: ${settings.businessName}\nTone: ${settings.tone}\nLanguage: ${settings.language}\n\nWorkflow instruction: ${instruction || "Reply helpfully to the latest customer message."}\n\nKnowledge base:\n${knowledgeText}`,
+        content: `You are Paperhuman's workflow assistant. Generate one concise customer-service reply for the active conversation. Use only the provided context and do not call tools.\n\nBusiness: ${settings.businessName}\nTone: ${settings.tone}\nLanguage: ${settings.language}\n\nWorkflow instruction: ${instruction || "Reply helpfully to the latest customer message."}\n\nKnowledge base:\n${knowledgeText}`,
       },
       ...conversation.messages.map((message) => ({
         role: message.role === "assistant" ? "assistant" as const : "user" as const,
@@ -782,7 +834,7 @@ async function generateWorkflowLlmOutput(
       {
         role: "system",
         content: [
-          "You are Cosstigo's workflow LLM step.",
+          "You are Paperhuman's workflow LLM step.",
           "Generate output for the next workflow node. Do not send a customer reply yourself.",
           formatInstruction,
           "",
@@ -901,6 +953,7 @@ async function createPendingApproval(
 
   const saved = await prisma.message.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId: input.conversationId,
       role: "system",
       content: `Workflow approval required: ${approval.title}`,
@@ -1149,6 +1202,7 @@ async function executeAction(
 
     const ticket = await prisma.ticket.create({
       data: {
+        companyId: currentCompanyId(),
         conversationId: input.conversationId,
         title,
         description,
@@ -1159,6 +1213,7 @@ async function executeAction(
 
     const systemMessage = await prisma.message.create({
       data: {
+        companyId: currentCompanyId(),
         conversationId: input.conversationId,
         role: "system",
         content: `Workflow created ticket: ${ticket.title}`,
@@ -1216,13 +1271,48 @@ async function executeAction(
     const title =
       renderWorkflowTemplate(data.moduleRecordTitle, input, flowName, state).trim() ||
       `${installed.catalog.name}: ${input.message.slice(0, 80)}`;
-    const recordData = parseJsonObject(
-      renderWorkflowTemplate(data.moduleRecordData || "{}", input, flowName, state),
-      "Module record data"
-    );
+
+    let recordData: Record<string, unknown>;
+    try {
+      recordData = parseJsonObject(
+        renderWorkflowJsonTemplate(data.moduleRecordData || "{}", input, flowName, state),
+        "Module record data"
+      );
+    } catch (error) {
+      // A malformed moduleRecordData template must never crash the whole
+      // run silently (it used to: the run would stay stuck at "started"
+      // forever with no step logged and no reply ever sent) - log it as a
+      // failed step and let the flow continue past it instead.
+      await recordWorkflowRunStep(runId, {
+        nodeId: node.id,
+        nodeLabel: data.label || "Create Module Record",
+        nodeType: data.nodeType,
+        actionType: data.actionType,
+        status: "failed",
+        message: `Module record data template is invalid: ${error instanceof Error ? error.message : String(error)}`,
+        metadata: { moduleSlug },
+      });
+      await logActivity({
+        action: "workflow.action_failed",
+        entity: ACTIVITY_ENTITIES.WORKFLOW,
+        entityId: flowId,
+        description: `${flowName}: Create Module Record step failed.`,
+        metadata: {
+          flowId,
+          flowName,
+          runId: runId || null,
+          conversationId: input.conversationId,
+          stepId: node.id,
+          actionType: data.actionType,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return "";
+    }
 
     const record = await prisma.moduleRecord.create({
       data: {
+        companyId: currentCompanyId(),
         moduleId: installed.module.id,
         recordType,
         title,
@@ -1237,6 +1327,7 @@ async function executeAction(
         updatedBy: "Workflow",
         events: {
           create: {
+            companyId: currentCompanyId(),
             action: "workflow_created",
             description: `${flowName} created this record.`,
             createdBy: "Workflow",
@@ -1263,6 +1354,7 @@ async function executeAction(
 
     const moduleMessage = await prisma.message.create({
       data: {
+        companyId: currentCompanyId(),
         conversationId: input.conversationId,
         role: "system",
         content: `Workflow created ${installed.catalog.name} record: ${record.title}`,
@@ -1344,13 +1436,43 @@ async function executeAction(
       flowName,
       state
     ).trim();
-    const signalData = parseJsonObject(
-      renderWorkflowTemplate(data.moduleSignalData || "{}", input, flowName, state),
-      "Module signal data"
-    );
+    let signalData: Record<string, unknown>;
+    try {
+      signalData = parseJsonObject(
+        renderWorkflowJsonTemplate(data.moduleSignalData || "{}", input, flowName, state),
+        "Module signal data"
+      );
+    } catch (error) {
+      await recordWorkflowRunStep(runId, {
+        nodeId: node.id,
+        nodeLabel: data.label || "Create Module Signal",
+        nodeType: data.nodeType,
+        actionType: data.actionType,
+        status: "failed",
+        message: `Module signal data template is invalid: ${error instanceof Error ? error.message : String(error)}`,
+        metadata: { moduleSlug },
+      });
+      await logActivity({
+        action: "workflow.action_failed",
+        entity: ACTIVITY_ENTITIES.WORKFLOW,
+        entityId: flowId,
+        description: `${flowName}: Create Module Signal step failed.`,
+        metadata: {
+          flowId,
+          flowName,
+          runId: runId || null,
+          conversationId: input.conversationId,
+          stepId: node.id,
+          actionType: data.actionType,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return "";
+    }
 
     const signal = await prisma.moduleSignal.create({
       data: {
+        companyId: currentCompanyId(),
         moduleId: installed.module.id,
         signalType: data.moduleSignalType || "attention_required",
         severity: data.moduleSignalSeverity || "medium",
@@ -1402,6 +1524,7 @@ async function executeAction(
 
     const signalMessage = await prisma.message.create({
       data: {
+        companyId: currentCompanyId(),
         conversationId: input.conversationId,
         role: "system",
         content: `Workflow created Reporter Agent signal: ${signal.title}`,
@@ -1558,10 +1681,39 @@ async function executeAction(
       return "";
     }
 
-    const patchData = parseJsonObject(
-      renderWorkflowTemplate(data.moduleRecordUpdateData || data.moduleRecordData || "{}", input, flowName, state),
-      "Module record update data"
-    );
+    let patchData: Record<string, unknown>;
+    try {
+      patchData = parseJsonObject(
+        renderWorkflowJsonTemplate(data.moduleRecordUpdateData || data.moduleRecordData || "{}", input, flowName, state),
+        "Module record update data"
+      );
+    } catch (error) {
+      await recordWorkflowRunStep(runId, {
+        nodeId: node.id,
+        nodeLabel: data.label || "Update Module Record",
+        nodeType: data.nodeType,
+        actionType: data.actionType,
+        status: "failed",
+        message: `Module record update data template is invalid: ${error instanceof Error ? error.message : String(error)}`,
+        metadata: { moduleSlug },
+      });
+      await logActivity({
+        action: "workflow.action_failed",
+        entity: ACTIVITY_ENTITIES.WORKFLOW,
+        entityId: flowId,
+        description: `${flowName}: Update Module Record step failed.`,
+        metadata: {
+          flowId,
+          flowName,
+          runId: runId || null,
+          conversationId: input.conversationId,
+          stepId: node.id,
+          actionType: data.actionType,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      return "";
+    }
     const record = await prisma.moduleRecord.update({
       where: { id: existing.id },
       data: {
@@ -1574,6 +1726,7 @@ async function executeAction(
         updatedBy: "Workflow",
         events: {
           create: {
+            companyId: currentCompanyId(),
             action: "workflow_updated",
             description: `${flowName} updated this record.`,
             createdBy: "Workflow",
@@ -1595,6 +1748,7 @@ async function executeAction(
 
     const moduleMessage = await prisma.message.create({
       data: {
+        companyId: currentCompanyId(),
         conversationId: input.conversationId,
         role: "system",
         content: `Workflow updated ${installed.catalog.name} record: ${record.title}`,
@@ -1817,6 +1971,7 @@ async function executeAction(
 
     const systemMessage = await prisma.message.create({
       data: {
+        companyId: currentCompanyId(),
         conversationId: input.conversationId,
         role: "system",
         content: `Workflow assigned conversation to ${member.name} (${member.department.name})`,
@@ -2377,6 +2532,7 @@ async function executeAction(
 
       const systemMessage = await prisma.message.create({
         data: {
+          companyId: currentCompanyId(),
           conversationId: input.conversationId,
           role: "system",
           content: `Workflow skill result (${data.skillName || "skill"}): ${generated.reply}`,
@@ -2829,7 +2985,7 @@ export async function runChannelWorkflows(
 
 export async function processDueWorkflowJobs(limit = 10) {
   const timedOutApprovals = await markTimedOutWorkflowApprovals();
-  const jobs = await prisma.workflowJob.findMany({
+  const jobs = await prismaUnscoped.workflowJob.findMany({
     where: {
       status: "pending",
       dueAt: { lte: new Date() },
@@ -2842,11 +2998,12 @@ export async function processDueWorkflowJobs(limit = 10) {
   let failed = 0;
 
   for (const job of jobs) {
-    const locked = await prisma.workflowJob.updateMany({
+    const locked = await prismaUnscoped.workflowJob.updateMany({
       where: { id: job.id, status: "pending" },
       data: { status: "running", lockedAt: new Date(), lastError: "" },
     });
     if (locked.count === 0) continue;
+    setCurrentCompany(job.companyId);
 
     const run = await startWorkflowRun({
       flowId: job.flowId,

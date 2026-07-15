@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
 
     const campaign = await prisma.campaign.create({
       data: {
+        companyId: auth.companyId,
         name: name.trim(),
         description: description?.trim() || "",
         channel: channel || "email",

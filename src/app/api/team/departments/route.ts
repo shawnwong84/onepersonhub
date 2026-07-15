@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
 
     const department = await prisma.department.create({
       data: {
+        companyId: auth.companyId,
         name: name.trim(),
         description: description?.trim() || "",
         email: email?.trim() || "",

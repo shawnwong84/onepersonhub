@@ -6,14 +6,27 @@ const connectionString = process.env.DATABASE_URL || "postgresql://postgres:post
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
+// Matches the fixed id the multi-tenancy migration used for pre-existing
+// data ("Company #1") - seeding against the same id keeps a fresh `db:seed`
+// run and a migrated dev database consistent with each other.
+const COMPANY_ID = "00000000-0000-0000-0000-000000000001";
+
 async function main() {
+  await prisma.company.upsert({
+    where: { id: COMPANY_ID },
+    update: {},
+    create: { id: COMPANY_ID, name: "Default Company" },
+  });
+
   // Create default admin (password: admin123)
   const hashedPassword = await bcrypt.hash("admin123", 12);
   await prisma.admin.upsert({
     where: { username: "admin" },
     update: {},
     create: {
+      companyId: COMPANY_ID,
       username: "admin",
+      email: "admin@placeholder.local",
       password: hashedPassword,
       name: "Administrator",
       role: "admin",
@@ -22,10 +35,10 @@ async function main() {
 
   // Create default settings
   await prisma.settings.upsert({
-    where: { id: "default" },
+    where: { companyId: COMPANY_ID },
     update: {},
     create: {
-      id: "default",
+      companyId: COMPANY_ID,
       businessName: "My Business",
       businessDesc: "We provide excellent products and services.",
       welcomeMessage: "Hello! Welcome to our support. How can I help you today?",
@@ -37,17 +50,17 @@ async function main() {
   // Create default channels
   for (const type of ["whatsapp", "email", "phone"]) {
     await prisma.channel.upsert({
-      where: { type },
+      where: { companyId_type: { companyId: COMPANY_ID, type } },
       update: {},
-      create: { type, isActive: false, status: "disconnected" },
+      create: { companyId: COMPANY_ID, type, isActive: false, status: "disconnected" },
     });
   }
 
   // Create default business hours
   await prisma.businessHours.upsert({
-    where: { id: "default" },
+    where: { companyId: COMPANY_ID },
     update: {},
-    create: { id: "default" },
+    create: { companyId: COMPANY_ID },
   });
 
   // Create sample departments
@@ -56,6 +69,7 @@ async function main() {
     update: {},
     create: {
       id: "dept-tech",
+      companyId: COMPANY_ID,
       name: "Technical Support",
       description: "Handles technical issues, bugs, and product troubleshooting",
       email: "tech@example.com",
@@ -67,6 +81,7 @@ async function main() {
     update: {},
     create: {
       id: "dept-sales",
+      companyId: COMPANY_ID,
       name: "Sales",
       description: "Handles pricing, quotes, and purchase inquiries",
       email: "sales@example.com",
@@ -78,6 +93,7 @@ async function main() {
     update: {},
     create: {
       id: "dept-billing",
+      companyId: COMPANY_ID,
       name: "Billing",
       description: "Handles invoices, payments, and refunds",
       email: "billing@example.com",
@@ -96,31 +112,31 @@ async function main() {
     await prisma.teamMember.upsert({
       where: { id: m.id },
       update: {},
-      create: m,
+      create: { ...m, companyId: COMPANY_ID },
     });
   }
 
   // Create sample knowledge base
   const categories = [
-    { id: "cat-faq", name: "FAQ", description: "Frequently asked questions", icon: "help-circle", color: "#4A7C9B", sortOrder: 0 },
+    { id: "cat-faq", name: "FAQ", description: "Frequently asked questions", icon: "help-circle", color: "#F97316", sortOrder: 0 },
     { id: "cat-products", name: "Products", description: "Product information and features", icon: "package", color: "#22C55E", sortOrder: 1 },
     { id: "cat-policies", name: "Policies", description: "Return, refund, and shipping policies", icon: "shield", color: "#F59E0B", sortOrder: 2 },
   ];
 
   for (const c of categories) {
-    await prisma.category.upsert({ where: { id: c.id }, update: {}, create: c });
+    await prisma.category.upsert({ where: { id: c.id }, update: {}, create: { ...c, companyId: COMPANY_ID } });
   }
 
   const entries = [
     { id: "entry-1", categoryId: "cat-faq", title: "Business Hours", content: "We are open Monday to Friday, 9:00 AM to 6:00 PM. Our AI assistant is available 24/7 for basic inquiries.", priority: 10 },
-    { id: "entry-2", categoryId: "cat-faq", title: "Contact Information", content: "You can reach us via email at support@example.com, phone at +1-555-0123, or WhatsApp. Our AI assistant is always here to help!", priority: 9 },
+    { id: "entry-2", categoryId: "cat-faq", title: "Contact Information", content: "No dedicated support email or phone line has been configured yet. If a customer asks how to reach a human, do not invent contact details - create a ticket or escalate instead.", priority: 9 },
     { id: "entry-3", categoryId: "cat-products", title: "Product Overview", content: "We offer a range of products designed to help businesses streamline their operations. Contact our sales team for detailed pricing and custom solutions.", priority: 5 },
     { id: "entry-4", categoryId: "cat-policies", title: "Return Policy", content: "We offer a 30-day return policy for all unused products in their original packaging. To initiate a return, please contact our support team with your order number.", priority: 8 },
     { id: "entry-5", categoryId: "cat-policies", title: "Refund Policy", content: "Refunds are processed within 5-10 business days after we receive the returned item. The refund will be credited to the original payment method.", priority: 7 },
   ];
 
   for (const e of entries) {
-    await prisma.knowledgeEntry.upsert({ where: { id: e.id }, update: {}, create: e });
+    await prisma.knowledgeEntry.upsert({ where: { id: e.id }, update: {}, create: { ...e, companyId: COMPANY_ID } });
   }
 
   // Create sample tags
@@ -133,7 +149,11 @@ async function main() {
   ];
 
   for (const t of tags) {
-    await prisma.tag.upsert({ where: { name: t.name }, update: {}, create: t });
+    await prisma.tag.upsert({
+      where: { companyId_name: { companyId: COMPANY_ID, name: t.name } },
+      update: {},
+      create: { ...t, companyId: COMPANY_ID },
+    });
   }
 
   // Create sample canned responses
@@ -145,7 +165,7 @@ async function main() {
   ];
 
   for (const cr of cannedResponses) {
-    await prisma.cannedResponse.upsert({ where: { id: cr.id }, update: {}, create: cr });
+    await prisma.cannedResponse.upsert({ where: { id: cr.id }, update: {}, create: { ...cr, companyId: COMPANY_ID } });
   }
 
   // Create sample SLA rules
@@ -155,7 +175,7 @@ async function main() {
   ];
 
   for (const sla of slaRules) {
-    await prisma.sLARule.upsert({ where: { id: sla.id }, update: {}, create: sla });
+    await prisma.sLARule.upsert({ where: { id: sla.id }, update: {}, create: { ...sla, companyId: COMPANY_ID } });
   }
 
   // Demo AI agents
@@ -185,7 +205,7 @@ async function main() {
   ];
 
   for (const agent of demoAgents) {
-    await prisma.agent.upsert({ where: { id: agent.id }, update: {}, create: agent });
+    await prisma.agent.upsert({ where: { id: agent.id }, update: {}, create: { ...agent, companyId: COMPANY_ID } });
   }
 
   console.log("Seed data created successfully!");

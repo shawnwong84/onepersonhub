@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
 
     const rule = await prisma.sLARule.create({
       data: {
+        companyId: auth.companyId,
         name: name.trim(),
         description: description?.trim() || "",
         channel: channel || "all",

@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
 
     const conversation = await prisma.conversation.create({
       data: {
+        companyId: auth.companyId,
         channel: channel.trim(),
         customerName: customerName?.trim() || "Unknown",
         customerContact: customerContact?.trim() || "",

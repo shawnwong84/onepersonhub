@@ -479,7 +479,7 @@ export default function WebhooksPage() {
     <div className="flex flex-col h-full">
       <Header
         title="Webhooks"
-        description="Connect Cosstigo to external services"
+        description="Connect Paperhuman to external services"
         actions={
           <button
             onClick={() => setModalWebhook("new")}
@@ -502,7 +502,7 @@ export default function WebhooksPage() {
               <div className="text-sm text-owly-text-light leading-relaxed space-y-2">
                 <p className="font-medium text-owly-text">Webhook Payload Format</p>
                 <p>
-                  When a trigger event occurs, Cosstigo sends a JSON payload to your configured URL containing the event type, a timestamp, and the relevant data object. The payload structure is:
+                  When a trigger event occurs, Paperhuman sends a JSON payload to your configured URL containing the event type, a timestamp, and the relevant data object. The payload structure is:
                 </p>
                 <pre className="bg-gray-900 text-gray-100 text-xs p-3 rounded-lg border border-gray-700 overflow-x-auto">
 {`{
@@ -538,7 +538,7 @@ export default function WebhooksPage() {
                 No webhooks configured
               </h3>
               <p className="text-sm text-owly-text-light mb-4 max-w-md">
-                Webhooks let you send real-time notifications to external services when events occur in Cosstigo.
+                Webhooks let you send real-time notifications to external services when events occur in Paperhuman.
               </p>
               <button
                 onClick={() => setModalWebhook("new")}

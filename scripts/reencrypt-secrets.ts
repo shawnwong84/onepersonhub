@@ -87,7 +87,7 @@ async function main() {
       }
     }
     if (Object.keys(data).length > 0) {
-      await prisma.settings.update({ where: { id: row.id }, data });
+      await prisma.settings.update({ where: { companyId: row.companyId }, data });
       settingsUpdated++;
     }
   }

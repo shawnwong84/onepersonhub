@@ -1,6 +1,8 @@
 import { vi, beforeEach } from "vitest";
 import { DEFAULT_ROLE_PERMISSIONS, BUILT_IN_ROLES } from "@/lib/rbac";
-import { prisma } from "@/lib/prisma";
+import { prismaUnscoped } from "@/lib/prisma";
+
+export const TEST_COMPANY_ID = "test-company-id";
 
 // Set test environment variables
 process.env.JWT_SECRET = "test-secret-key-for-testing-only";
@@ -14,12 +16,23 @@ delete process.env.REDIS_URL;
 // Mock Prisma globally
 vi.mock("@/lib/prisma", () => ({
   prisma: createMockPrismaClient(),
+  prismaUnscoped: createMockPrismaClient(),
+}));
+
+// Mock tenant-context so any lib code calling currentCompanyId() outside a
+// mocked route-auth flow (e.g. background-worker style lib functions) still
+// resolves a company instead of throwing "no tenant context set".
+vi.mock("@/lib/tenant-context", () => ({
+  currentCompanyId: vi.fn().mockReturnValue("test-company-id"),
+  setCurrentCompany: vi.fn(),
+  hasCurrentCompany: vi.fn().mockReturnValue(true),
 }));
 
 // Mock route-auth to always authenticate as admin in tests
 vi.mock("@/lib/route-auth", () => ({
   requireAuth: vi.fn().mockResolvedValue({
     userId: "test-admin-id",
+    companyId: "test-company-id",
     role: "admin",
     username: "admin",
     name: "Test Admin",
@@ -108,6 +121,7 @@ function createMockPrismaClient() {
 const ROLE_FIXTURE_UNSCOPED = new Set(["supervisor", "admin"]);
 const ROLE_FIXTURE = BUILT_IN_ROLES.map((name) => ({
   id: name,
+  companyId: "test-company-id",
   name,
   label: name,
   isBuiltIn: true,
@@ -118,11 +132,45 @@ const ROLE_FIXTURE = BUILT_IN_ROLES.map((name) => ({
 }));
 
 export function applyRoleFixture() {
-  (prisma as unknown as { role: { findMany: ReturnType<typeof vi.fn> } }).role.findMany.mockResolvedValue(
+  (prismaUnscoped as unknown as { role: { findMany: ReturnType<typeof vi.fn> } }).role.findMany.mockResolvedValue(
     ROLE_FIXTURE
   );
 }
 
-beforeEach(() => {
+// src/middleware.ts gates every request on billing status (src/lib/billing/status.ts's
+// getBillingAccount, which calls prisma.billingAccount.upsert) - without a fixture
+// every authenticated-request test would see `undefined` and throw. Default to an
+// active/unlimited subscription so existing tests exercise their own concern, not
+// billing lockout; tests that specifically want a locked/quota-exceeded account
+// should override this mock themselves.
+const BILLING_FIXTURE = {
+  companyId: "test-company-id",
+  stripeCustomerId: null,
+  stripeSubscriptionId: null,
+  plan: "unlimited",
+  billingCycle: "monthly",
+  status: "active",
+  currentPeriodEnd: null,
+  gracePeriodEndsAt: null,
+  moduleQuotaExceeded: false,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+export function applyBillingFixture() {
+  (prismaUnscoped as unknown as { billingAccount: { upsert: ReturnType<typeof vi.fn> } }).billingAccount.upsert.mockResolvedValue(
+    BILLING_FIXTURE
+  );
+}
+
+beforeEach(async () => {
+  // Both caches are module-level singletons that persist across test files;
+  // clear them so each test's fixture mocks are actually consulted instead
+  // of a previous test's cached role/billing lookup.
+  const { invalidateRoleCache } = await import("@/lib/rbac");
+  const { invalidateBillingCache } = await import("@/lib/billing/status");
+  invalidateRoleCache();
+  invalidateBillingCache(TEST_COMPANY_ID);
   applyRoleFixture();
+  applyBillingFixture();
 });

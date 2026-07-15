@@ -42,19 +42,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = await prisma.role.findUnique({ where: { name: trimmedName } });
+    const existing = await prisma.role.findUnique({
+      where: { companyId_name: { companyId: auth.companyId, name: trimmedName } },
+    });
     if (existing) {
       return NextResponse.json({ error: "A role with this name already exists" }, { status: 400 });
     }
 
     const role = await prisma.role.create({
       data: {
+        companyId: auth.companyId,
         name: trimmedName,
         label: trimmedLabel,
         isBuiltIn: false,
         isUnscoped: Boolean(isUnscoped),
         permissions: {
-          create: (permissions || []).map((permission: string) => ({ permission })),
+          create: (permissions || []).map((permission: string) => ({
+            companyId: auth.companyId,
+            permission,
+          })),
         },
       },
       include: { permissions: { select: { permission: true } } },

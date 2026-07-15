@@ -91,6 +91,8 @@ export default function MarketplacePage() {
   );
 
   const installedCount = modules.filter((module) => module.isInstalled).length;
+  const coreModules = useMemo(() => modules.filter((module) => module.isCore), [modules]);
+  const supportingModules = useMemo(() => modules.filter((module) => !module.isCore), [modules]);
 
   const runModuleAction = useCallback(
     async (slug: string, action: "install" | "enable" | "disable" | "uninstall" | "configure") => {
@@ -187,84 +189,60 @@ export default function MarketplacePage() {
               </div>
             )}
 
-            <div className="grid gap-3 xl:grid-cols-2">
-              {loading ? (
-                Array.from({ length: 6 }).map((_, index) => (
+            {loading ? (
+              <div className="grid gap-3 xl:grid-cols-2">
+                {Array.from({ length: 6 }).map((_, index) => (
                   <div key={index} className="h-56 animate-pulse rounded-xl border border-owly-border bg-owly-surface" />
-                ))
-              ) : modules.length === 0 ? (
-                <div className="col-span-full rounded-xl border border-dashed border-owly-border bg-owly-surface p-8 text-center text-sm text-owly-text-light">
-                  No modules match the current filters.
-                </div>
-              ) : (
-                modules.map((module) => {
-                  const Icon = getModuleIcon(module.iconName);
-                  const active = selected?.slug === module.slug;
+                ))}
+              </div>
+            ) : modules.length === 0 ? (
+              <div className="col-span-full rounded-xl border border-dashed border-owly-border bg-owly-surface p-8 text-center text-sm text-owly-text-light">
+                No modules match the current filters.
+              </div>
+            ) : (
+              <>
+                {coreModules.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-owly-text-light">
+                      Core - always on
+                    </p>
+                    <div className="mt-2 grid gap-3 xl:grid-cols-2">
+                      {coreModules.map((module) => (
+                        <ModuleCard
+                          key={module.slug}
+                          module={module}
+                          icon={getModuleIcon(module.iconName)}
+                          active={selected?.slug === module.slug}
+                          onClick={() => setSelectedSlug(module.slug)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                  return (
-                    <button
-                      key={module.slug}
-                      type="button"
-                      onClick={() => setSelectedSlug(module.slug)}
-                      className={cn(
-                        "rounded-xl border bg-owly-surface p-4 text-left transition hover:border-owly-primary hover:shadow-sm",
-                        active ? "border-owly-primary ring-2 ring-owly-primary/10" : "border-owly-border"
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-owly-primary-50 text-owly-primary">
-                          <Icon className="h-5 w-5" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="font-semibold text-owly-text">{module.name}</p>
-                              <p className="mt-0.5 text-xs text-owly-text-light">{module.category}</p>
-                            </div>
-                            <span
-                              className={cn(
-                                "rounded-full px-2 py-0.5 text-xs font-semibold",
-                                module.isCore
-                                  ? "bg-owly-primary-50 text-owly-primary"
-                                  : module.isInstalled
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-owly-bg text-owly-text-light"
-                              )}
-                            >
-                              {module.isCore ? "Core" : module.isInstalled ? "Installed" : "Available"}
-                            </span>
-                          </div>
-                          <p className="mt-3 line-clamp-2 text-sm text-owly-text-light">{module.description}</p>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-1.5">
-                        {module.channels.map((channel) => (
-                          <span key={channel} className="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
-                            {channel}
-                          </span>
-                        ))}
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-owly-text-light">
-                        <div>
-                          <p className="font-semibold text-owly-text">{module.workflows.length}</p>
-                          workflows
-                        </div>
-                        <div>
-                          <p className="font-semibold text-owly-text">{module.records.length}</p>
-                          records
-                        </div>
-                        <div>
-                          <p className="font-semibold text-owly-text">{module.reporterSignals.length}</p>
-                          signals
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
+                {supportingModules.length > 0 && (
+                  <div className="mt-6">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-owly-text-light">
+                      Supporting modules
+                    </p>
+                    <p className="mt-0.5 text-sm text-owly-text-light">
+                      Extend Customer Care with the areas of your business you want watched.
+                    </p>
+                    <div className="mt-2 grid gap-3 xl:grid-cols-2">
+                      {supportingModules.map((module) => (
+                        <ModuleCard
+                          key={module.slug}
+                          module={module}
+                          icon={getModuleIcon(module.iconName)}
+                          active={selected?.slug === module.slug}
+                          onClick={() => setSelectedSlug(module.slug)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </section>
 
           <aside className="lg:sticky lg:top-5 lg:self-start">
@@ -366,6 +344,79 @@ export default function MarketplacePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ModuleCard({
+  module,
+  icon: Icon,
+  active,
+  onClick,
+}: {
+  module: MarketplaceModule;
+  icon: React.ElementType;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-xl border bg-owly-surface p-4 text-left transition hover:border-owly-primary hover:shadow-sm",
+        active ? "border-owly-primary ring-2 ring-owly-primary/10" : "border-owly-border"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-owly-primary-50 text-owly-primary">
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-semibold text-owly-text">{module.name}</p>
+              <p className="mt-0.5 text-xs text-owly-text-light">{module.category}</p>
+            </div>
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-xs font-semibold",
+                module.isCore
+                  ? "bg-owly-primary-50 text-owly-primary"
+                  : module.isInstalled
+                  ? "bg-green-100 text-green-700"
+                  : "bg-owly-bg text-owly-text-light"
+              )}
+            >
+              {module.isCore ? "Core" : module.isInstalled ? "Installed" : "Available"}
+            </span>
+          </div>
+          <p className="mt-3 line-clamp-2 text-sm text-owly-text-light">{module.description}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {module.channels.map((channel) => (
+          <span key={channel} className="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
+            {channel}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-owly-text-light">
+        <div>
+          <p className="font-semibold text-owly-text">{module.workflows.length}</p>
+          workflows
+        </div>
+        <div>
+          <p className="font-semibold text-owly-text">{module.records.length}</p>
+          records
+        </div>
+        <div>
+          <p className="font-semibold text-owly-text">{module.reporterSignals.length}</p>
+          signals
+        </div>
+      </div>
+    </button>
   );
 }
 

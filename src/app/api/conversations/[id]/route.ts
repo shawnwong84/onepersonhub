@@ -192,6 +192,7 @@ export async function PUT(
       if (tagIds.length > 0) {
         await prisma.conversationTag.createMany({
           data: tagIds.map((tagId: string) => ({
+            companyId: auth.companyId,
             conversationId: id,
             tagId,
           })),

@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
 
     const entry = await prisma.knowledgeEntry.create({
       data: {
+        companyId: auth.companyId,
         categoryId,
         title: title.trim(),
         content: content?.trim() || "",

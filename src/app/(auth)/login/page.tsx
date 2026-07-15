@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import { BrandMark } from "@/components/brand-mark";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,10 +17,6 @@ export default function LoginPage() {
       try {
         const res = await fetch("/api/auth");
         const data = await res.json();
-        if (data.setupRequired) {
-          router.replace("/setup");
-          return;
-        }
         if (data.authenticated) {
           router.replace("/");
           return;
@@ -71,15 +67,9 @@ export default function LoginPage() {
     return (
       <div className="bg-owly-surface rounded-2xl shadow-lg border border-owly-border p-8">
         <div className="flex flex-col items-center">
-          <Image
-            src="/owly.png"
-            alt="Cosstigo"
-            width={56}
-            height={56}
-            className="mb-4"
-          />
+          <BrandMark size={56} className="mb-4" />
           <h1 className="text-2xl font-bold text-owly-text">
-            Welcome to Cosstigo
+            Welcome to Paperhuman
           </h1>
           <div className="mt-8 h-6 w-6 animate-spin rounded-full border-2 border-owly-primary border-t-transparent" />
         </div>
@@ -90,15 +80,9 @@ export default function LoginPage() {
   return (
     <div className="bg-owly-surface rounded-2xl shadow-lg border border-owly-border p-8">
       <div className="flex flex-col items-center mb-8">
-        <Image
-          src="/owly.png"
-          alt="Cosstigo"
-          width={56}
-          height={56}
-          className="mb-4"
-        />
+        <BrandMark size={56} className="mb-4" />
         <h1 className="text-2xl font-bold text-owly-text">
-          Welcome to Cosstigo
+          Welcome to Paperhuman
         </h1>
         <p className="text-owly-text-light text-sm mt-1">
           Sign in to your account
@@ -165,6 +149,12 @@ export default function LoginPage() {
           )}
         </button>
       </form>
+      <p className="mt-6 text-center text-sm text-owly-text-light">
+        New to Paperhuman?{" "}
+        <a href="/request-demo" className="font-semibold text-owly-primary hover:text-owly-primary-dark">
+          Request a demo
+        </a>
+      </p>
     </div>
   );
 }

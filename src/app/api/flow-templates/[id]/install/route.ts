@@ -24,6 +24,7 @@ export async function POST(
 
     const flow = await prisma.flow.create({
       data: {
+        companyId: auth.companyId,
         name: template.name,
         description: template.description,
         startNodeId: template.nodes[0]?.id || "",

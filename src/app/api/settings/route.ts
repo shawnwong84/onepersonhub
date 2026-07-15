@@ -12,12 +12,12 @@ export async function GET(request: NextRequest) {
 
   try {
     let settings = await prisma.settings.findUnique({
-      where: { id: "default" },
+      where: { companyId: auth.companyId },
     });
 
     if (!settings) {
       settings = await prisma.settings.create({
-        data: { id: "default" },
+        data: { companyId: auth.companyId },
       });
     }
 
@@ -39,7 +39,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
 
     // Remove fields that should not be updated directly
-    delete body.id;
+    delete body.companyId;
     delete body.createdAt;
     delete body.updatedAt;
 
@@ -49,15 +49,15 @@ export async function PUT(request: NextRequest) {
     }
 
     const settings = await prisma.settings.upsert({
-      where: { id: "default" },
+      where: { companyId: auth.companyId },
       update: validation.data,
-      create: { id: "default", ...validation.data },
+      create: { companyId: auth.companyId, ...validation.data },
     });
 
     await logActivity({
       action: "settings.updated",
       entity: ACTIVITY_ENTITIES.SETTINGS,
-      entityId: settings.id,
+      entityId: settings.companyId,
       description: "Updated system settings.",
       userId: auth.userId,
       userName: auth.name || auth.username,

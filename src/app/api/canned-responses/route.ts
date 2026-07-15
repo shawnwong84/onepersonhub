@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
 
     const response = await prisma.cannedResponse.create({
       data: {
+        companyId: auth.companyId,
         title: title.trim(),
         content: content.trim(),
         category: category?.trim() || "General",

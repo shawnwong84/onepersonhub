@@ -206,12 +206,13 @@ export async function POST(request: NextRequest) {
     }
 
     const channel = await prisma.channel.upsert({
-      where: { type },
+      where: { companyId_type: { companyId: auth.companyId, type } },
       update: {
         isActive: typeof isActive === "boolean" ? isActive : undefined,
         config: config ?? undefined,
       },
       create: {
+        companyId: auth.companyId,
         type,
         isActive: typeof isActive === "boolean" ? isActive : false,
         config: config ?? {},

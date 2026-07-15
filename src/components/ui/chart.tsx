@@ -21,13 +21,13 @@ interface BaseChartProps {
 // ==================== PALETTE ====================
 
 const DEFAULT_COLORS = [
-  "#4A7C9B",
+  "#F97316",
   "#C4956A",
   "#22C55E",
   "#F59E0B",
   "#EF4444",
-  "#A8D0E6",
-  "#2D5A7B",
+  "#FDBA74",
+  "#EA580C",
   "#8B5CF6",
   "#EC4899",
   "#14B8A6",
@@ -188,8 +188,8 @@ export function LineChart({
       >
         <defs>
           <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4A7C9B" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#4A7C9B" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#F97316" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#F97316" stopOpacity="0.02" />
           </linearGradient>
         </defs>
 
@@ -231,7 +231,7 @@ export function LineChart({
         <polyline
           points={polyline}
           fill="none"
-          stroke="#4A7C9B"
+          stroke="#F97316"
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -248,7 +248,7 @@ export function LineChart({
               cx={p.x}
               cy={p.y}
               r={animated ? 4 : 0}
-              fill="#4A7C9B"
+              fill="#F97316"
               stroke="white"
               strokeWidth="2"
               style={{

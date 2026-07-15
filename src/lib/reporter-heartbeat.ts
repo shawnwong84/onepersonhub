@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnscoped } from "@/lib/prisma";
+import { currentCompanyId, setCurrentCompany } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 import { runReporterAgentScan } from "@/lib/reporter-agent";
 import { postReporterMessage } from "@/lib/reporter-chat";
@@ -83,8 +84,30 @@ async function recipientsForModules(moduleSlugs: string[]) {
  * One heartbeat: run the scan, find signals created since the last beat,
  * and deliver them to the right people through chat, notifications, and email.
  */
-export async function runReporterHeartbeat(force = false) {
-  const reporter = await prisma.businessModule.findUnique({ where: { slug: "reporter-agent" } });
+export async function runReporterHeartbeat(force = false, onlyCompanyId?: string) {
+  if (onlyCompanyId) {
+    setCurrentCompany(onlyCompanyId);
+    return runReporterHeartbeatForCompany(force);
+  }
+
+  const companies = await prismaUnscoped.company.findMany({ select: { id: true } });
+  const results = [];
+  for (const company of companies) {
+    setCurrentCompany(company.id);
+    try {
+      results.push(await runReporterHeartbeatForCompany(force));
+    } catch (error) {
+      logger.error("Reporter heartbeat failed for company:", error, { companyId: company.id });
+    }
+  }
+  return results;
+}
+
+async function runReporterHeartbeatForCompany(force = false) {
+  const companyId = currentCompanyId();
+  const reporter = await prisma.businessModule.findUnique({
+    where: { companyId_slug: { companyId, slug: "reporter-agent" } },
+  });
   const config = readHeartbeatConfig(reporter?.config);
   const now = new Date();
 
@@ -176,7 +199,7 @@ export async function runReporterHeartbeat(force = false) {
         .join("\n\n");
       for (const recipient of config.emailRecipients) {
         try {
-          await sendEmail(recipient, `[Cosstigo] ${critical.length} critical alert${critical.length > 1 ? "s" : ""}`, body);
+          await sendEmail(recipient, `[Paperhuman] ${critical.length} critical alert${critical.length > 1 ? "s" : ""}`, body);
         } catch (error) {
           logger.error("Heartbeat email delivery failed:", error);
         }
@@ -187,8 +210,9 @@ export async function runReporterHeartbeat(force = false) {
   // Record the beat.
   const catalog = findMarketplaceModule("reporter-agent");
   await prisma.businessModule.upsert({
-    where: { slug: "reporter-agent" },
+    where: { companyId_slug: { companyId, slug: "reporter-agent" } },
     create: {
+      companyId,
       slug: "reporter-agent",
       name: catalog?.name || "Reporter Agent",
       category: catalog?.category || "Monitoring and reporting",

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const [settings, knowledgeCount, activeChannelCount, teamMemberCount] =
       await Promise.all([
         prisma.settings.findUnique({
-          where: { id: "default" },
+          where: { companyId: auth.companyId },
           select: {
             businessName: true,
             aiApiKey: true,

@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   if (!isAuthenticated(auth)) return auth;
 
   try {
-    const result = await runReporterHeartbeat(true);
+    const result = await runReporterHeartbeat(true, auth.companyId);
     return NextResponse.json(result);
   } catch (error) {
     logger.error("Manual heartbeat failed:", error);

@@ -34,7 +34,7 @@ describe("Auth Security", () => {
     it("should reject token with tampered payload", async () => {
       const { generateToken, verifyToken } = await import("@/lib/auth");
 
-      const token = generateToken("user-1", "viewer");
+      const token = generateToken("user-1", "company-abc", "viewer");
       // Tamper with the payload by modifying the middle part
       const parts = token.split(".");
       const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
@@ -58,7 +58,7 @@ describe("Auth Security", () => {
     it("should include userId and role in token payload", async () => {
       const { generateToken, verifyToken } = await import("@/lib/auth");
 
-      const token = generateToken("user-abc", "editor");
+      const token = generateToken("user-abc", "company-abc", "editor");
       const payload = verifyToken(token);
 
       expect(payload).not.toBeNull();

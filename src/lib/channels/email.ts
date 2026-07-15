@@ -2,6 +2,7 @@ import Imap from "imap";
 import { simpleParser, ParsedMail } from "mailparser";
 import nodemailer from "nodemailer";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId, setCurrentCompany } from "@/lib/tenant-context";
 import { chat, createNewConversation } from "@/lib/ai/engine";
 import { escapeHtml, sanitizeEmailSubject } from "@/lib/security";
 import { logger } from "@/lib/logger";
@@ -186,6 +187,7 @@ async function saveIncomingEmailOnly(
 ) {
   const saved = await prisma.message.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId,
       role: "customer",
       content,
@@ -612,9 +614,10 @@ export function processUnreadEmails(
   });
 }
 
-export async function startEmailListener() {
+export async function startEmailListener(companyId: string) {
   if (isListening) return;
   if (listenerStartPromise) return listenerStartPromise;
+  setCurrentCompany(companyId);
 
   listenerStartPromise = new Promise(async (resolve, reject) => {
     const config = await getEmailConfig();

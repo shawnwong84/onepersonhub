@@ -1,6 +1,7 @@
 import { Client, LocalAuth, Message } from "whatsapp-web.js";
 import * as qrcode from "qrcode";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId, setCurrentCompany } from "@/lib/tenant-context";
 import { chat, createNewConversation } from "@/lib/ai/engine";
 import { logger } from "@/lib/logger";
 import { resolveCustomer, normalizePhone } from "@/lib/customer-resolver";
@@ -48,14 +49,15 @@ if (!whatsappState.processedMessageIds) {
   whatsappState.processedMessageIds = new Set<string>();
 }
 
-const MESSAGE_HANDLER_VERSION = 7;
+const MESSAGE_HANDLER_VERSION = 8;
 
 async function updateWhatsAppChannel(isActive: boolean, status: string) {
   try {
+    const companyId = currentCompanyId();
     await prisma.channel.upsert({
-      where: { type: "whatsapp" },
+      where: { companyId_type: { companyId, type: "whatsapp" } },
       update: { isActive, status },
-      create: { type: "whatsapp", isActive, status },
+      create: { companyId, type: "whatsapp", isActive, status },
     });
   } catch (error) {
     logger.error("[WhatsApp] Failed to update channel status:", error);
@@ -80,7 +82,8 @@ export function getWhatsAppStatus() {
   };
 }
 
-export async function initWhatsApp(): Promise<void> {
+export async function initWhatsApp(companyId: string): Promise<void> {
+  setCurrentCompany(companyId);
   if (whatsappState.initPromise) {
     logger.info("[WhatsApp] Client initialization already in progress");
     return whatsappState.initPromise;
@@ -102,7 +105,11 @@ export async function initWhatsApp(): Promise<void> {
 function getMessageId(message: Message): string {
   return (
     message.id?._serialized ||
-    `${message.from}:${message.timestamp || Date.now()}:${message.body || ""}`
+    // Deliberately no Date.now() here: this fallback must produce the same
+    // key for the same logical message every time it's called, and a
+    // wall-clock read would differ between two near-simultaneous listener
+    // invocations for what's actually one message, defeating dedup below.
+    `${message.from}:${message.timestamp || 0}:${message.body || ""}`
   );
 }
 
@@ -374,15 +381,13 @@ function attachWhatsAppMessageHandlers(client: Client) {
   client.removeAllListeners("message");
   client.removeAllListeners("message_create");
 
+  // "message" alone is the correct, purpose-built event for incoming
+  // messages. "message_create" fires for every message in a chat -
+  // incoming AND outgoing - so wiring it to the same pipeline double-fired
+  // the whole conversation-creation + AI-reply flow for every real incoming
+  // message (confirmed: one customer message produced multiple duplicate
+  // conversations and replies). Do not re-add it.
   client.on("message", async (message: Message) => {
-    try {
-      await processIncomingMessage(message);
-    } catch (error) {
-      logger.error("[WhatsApp] Failed to process message:", error);
-    }
-  });
-
-  client.on("message_create", async (message: Message) => {
     try {
       await processIncomingMessage(message);
     } catch (error) {
@@ -410,6 +415,7 @@ async function saveIncomingMessageOnly(
 ) {
   const saved = await prisma.message.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId,
       role: "customer",
       content,

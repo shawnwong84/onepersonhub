@@ -25,11 +25,11 @@ const SECURITY_HEADERS: Record<string, string> = {
 const PRODUCTION_SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy": [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self' data:",
-    "connect-src 'self'",
+    "connect-src 'self' https://www.googletagmanager.com https://www.google-analytics.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -143,8 +143,32 @@ export async function middleware(request: NextRequest) {
   }
 
   // Public paths that don't require auth
-  const publicPaths = ["/login", "/setup", "/api/auth", "/api/health", "/api/openapi.json"];
-  const isPublic = publicPaths.some((p) => pathname.startsWith(p));
+  const publicPaths = [
+    "/login",
+    "/setup",
+    "/register",
+    "/features",
+    "/pricing",
+    "/security",
+    "/integrations",
+    "/about",
+    "/use-cases",
+    "/contact",
+    "/request-demo",
+    "/api-docs",
+    "/sitemap.xml",
+    "/robots.txt",
+    "/api/auth",
+    "/api/register",
+    "/api/demo-request",
+    "/api/health",
+    "/api/openapi.json",
+  ];
+  // "/" is exact-match public (not prefix, or every path would match): it
+  // serves the marketing landing page to anonymous visitors and the real
+  // dashboard to authenticated ones - the branch happens server-side in
+  // (dashboard)/layout.tsx and page.tsx, not here.
+  const isPublic = pathname === "/" || publicPaths.some((p) => pathname.startsWith(p));
 
   // Channel webhook endpoints (authenticated via provider signatures, not JWT)
   if (

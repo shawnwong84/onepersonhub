@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { prisma } from "@/lib/prisma";
+import { prismaUnscoped } from "@/lib/prisma";
 import { createRequest, parseJsonResponse } from "../helpers/request";
 import { fixtures } from "../helpers/fixtures";
 import { _getStoreForTesting as getLockoutStore } from "@/lib/login-lockout";
 
-const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+const mockPrisma = prismaUnscoped as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 
 // Mock auth functions
 vi.mock("@/lib/auth", async (importOriginal) => {
@@ -12,7 +12,6 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   return {
     ...actual,
     getCurrentUser: vi.fn(),
-    isSetupComplete: vi.fn(),
   };
 });
 
@@ -282,53 +281,6 @@ describe("POST /api/auth", () => {
     });
   });
 
-  describe("setup action", () => {
-    it("should create first admin", async () => {
-      const { isSetupComplete } = await import("@/lib/auth");
-      (isSetupComplete as ReturnType<typeof vi.fn>).mockResolvedValue(false);
-
-      mockPrisma.admin.create.mockResolvedValue({
-        id: "new-admin",
-        username: "newadmin",
-        name: "New Admin",
-        role: "admin",
-      });
-      mockPrisma.settings.upsert.mockResolvedValue({});
-      mockPrisma.channel.upsert.mockResolvedValue({});
-
-      const { POST } = await import("@/app/api/auth/route");
-      const request = createRequest("/api/auth", {
-        method: "POST",
-        body: {
-          action: "setup",
-          username: "newadmin",
-          password: "secure123",
-          name: "New Admin",
-        },
-      });
-
-      const response = await POST(request);
-      const data = await parseJsonResponse(response);
-
-      expect(response.status).toBe(200);
-      expect(data.success).toBe(true);
-    });
-
-    it("should reject setup when already completed", async () => {
-      const { isSetupComplete } = await import("@/lib/auth");
-      (isSetupComplete as ReturnType<typeof vi.fn>).mockResolvedValue(true);
-
-      const { POST } = await import("@/app/api/auth/route");
-      const request = createRequest("/api/auth", {
-        method: "POST",
-        body: { action: "setup", username: "admin", password: "pass123" },
-      });
-
-      const response = await POST(request);
-      expect(response.status).toBe(400);
-    });
-  });
-
   describe("logout action", () => {
     it("should clear auth cookie", async () => {
       const { POST } = await import("@/app/api/auth/route");
@@ -364,9 +316,8 @@ describe("GET /api/auth", () => {
     vi.restoreAllMocks();
   });
 
-  it("should return setupRequired when no admin exists", async () => {
-    const { isSetupComplete, getCurrentUser } = await import("@/lib/auth");
-    (isSetupComplete as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+  it("should return unauthenticated when no session exists", async () => {
+    const { getCurrentUser } = await import("@/lib/auth");
     (getCurrentUser as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
     const { GET } = await import("@/app/api/auth/route");
@@ -374,17 +325,17 @@ describe("GET /api/auth", () => {
     const data = await parseJsonResponse(response);
 
     expect(data.authenticated).toBe(false);
-    expect(data.setupRequired).toBe(true);
   });
 
   it("should return authenticated user", async () => {
-    const { isSetupComplete, getCurrentUser } = await import("@/lib/auth");
-    (isSetupComplete as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    const { getCurrentUser } = await import("@/lib/auth");
     (getCurrentUser as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "admin-1",
+      companyId: "test-company-id",
       username: "admin",
       name: "Admin",
       role: "admin",
+      userType: "owner",
     });
 
     const { GET } = await import("@/app/api/auth/route");

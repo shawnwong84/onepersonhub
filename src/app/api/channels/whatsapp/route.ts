@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   getWhatsAppStatus,
   initWhatsApp,
@@ -6,20 +6,27 @@ import {
 } from "@/lib/channels/whatsapp";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request, "channels:read");
+  if (!isAuthenticated(auth)) return auth;
+
   const status = getWhatsAppStatus();
   return NextResponse.json(status);
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request, "channels:update");
+  if (!isAuthenticated(auth)) return auth;
+
   const body = await request.json();
   const { action } = body;
 
   if (action === "connect") {
     try {
-      await initWhatsApp();
+      await initWhatsApp(auth.companyId);
       // Wait a moment for QR to generate
       await new Promise((resolve) => setTimeout(resolve, 2000));
       const status = getWhatsAppStatus();
@@ -62,7 +69,7 @@ export async function POST(request: Request) {
   if (action === "reconnect") {
     try {
       await disconnectWhatsApp();
-      await initWhatsApp();
+      await initWhatsApp(auth.companyId);
       await new Promise((resolve) => setTimeout(resolve, 2000));
       const status = getWhatsAppStatus();
       await logActivity({
@@ -81,20 +88,24 @@ export async function POST(request: Request) {
   return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 }
 
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
+  const auth = await requireAuth(request, "channels:update");
+  if (!isAuthenticated(auth)) return auth;
+
   try {
     const body = await request.json();
     const { isActive, config, status } = body;
     const whatsappConfig = config && typeof config === "object" ? config : {};
 
     const channel = await prisma.channel.upsert({
-      where: { type: "whatsapp" },
+      where: { companyId_type: { companyId: auth.companyId, type: "whatsapp" } },
       update: {
         isActive: typeof isActive === "boolean" ? isActive : undefined,
         config: whatsappConfig,
         status: status ?? undefined,
       },
       create: {
+        companyId: auth.companyId,
         type: "whatsapp",
         isActive: typeof isActive === "boolean" ? isActive : false,
         config: whatsappConfig,
@@ -103,14 +114,14 @@ export async function PUT(request: Request) {
     });
 
     await prisma.settings.upsert({
-      where: { id: "default" },
+      where: { companyId: auth.companyId },
       update: {
         whatsappMode: String(whatsappConfig.mode ?? "web"),
         whatsappApiKey: String(whatsappConfig.apiKey ?? ""),
         whatsappPhone: String(whatsappConfig.phoneNumber ?? ""),
       },
       create: {
-        id: "default",
+        companyId: auth.companyId,
         whatsappMode: String(whatsappConfig.mode ?? "web"),
         whatsappApiKey: String(whatsappConfig.apiKey ?? ""),
         whatsappPhone: String(whatsappConfig.phoneNumber ?? ""),
@@ -129,6 +140,7 @@ export async function PUT(request: Request) {
         status: channel.status,
       },
       create: {
+        companyId: auth.companyId,
         channel: "whatsapp",
         identifier: "default",
         name: "Primary WhatsApp",

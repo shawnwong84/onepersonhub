@@ -1,6 +1,7 @@
 export const fixtures = {
   admin: {
     id: "admin-1",
+    companyId: "test-company-id",
     username: "admin",
     password: "$2a$12$LJ3r8Jqx2yG7K5bQ1Z3mXeO6hY7qR9wKv8dXp3cN0fT4iU5gW6S2",
     name: "Test Admin",
@@ -10,7 +11,7 @@ export const fixtures = {
   },
 
   settings: {
-    id: "default",
+    companyId: "test-company-id",
     businessName: "Test Business",
     businessDesc: "A test business for unit testing",
     welcomeMessage: "Hello! How can I help?",

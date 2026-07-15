@@ -40,6 +40,7 @@ export async function POST(
 
     const event = await prisma.moduleRecordEvent.create({
       data: {
+        companyId: auth.companyId,
         moduleRecordId: record.id,
         action,
         description,

@@ -84,6 +84,7 @@ export async function POST(
         await prisma.tokenUsage
           .create({
             data: {
+              companyId: auth.companyId,
               provider: settings.aiProvider || "openai",
               model: settings.aiModel,
               feature: "agent_test",

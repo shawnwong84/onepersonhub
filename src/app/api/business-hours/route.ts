@@ -9,12 +9,12 @@ export async function GET(request: NextRequest) {
 
   try {
     let config = await prisma.businessHours.findUnique({
-      where: { id: "default" },
+      where: { companyId: auth.companyId },
     });
 
     if (!config) {
       config = await prisma.businessHours.create({
-        data: { id: "default" },
+        data: { companyId: auth.companyId },
       });
     }
 
@@ -60,7 +60,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const config = await prisma.businessHours.upsert({
-      where: { id: "default" },
+      where: { companyId: auth.companyId },
       update: {
         ...(enabled !== undefined && { enabled }),
         ...(timezone !== undefined && { timezone }),
@@ -74,7 +74,7 @@ export async function PUT(request: NextRequest) {
         ...(offlineMessage !== undefined && { offlineMessage }),
       },
       create: {
-        id: "default",
+        companyId: auth.companyId,
         enabled: enabled ?? false,
         timezone: timezone ?? "UTC",
         monday: monday ?? "09:00-18:00",

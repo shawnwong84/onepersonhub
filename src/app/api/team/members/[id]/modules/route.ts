@@ -56,6 +56,7 @@ export async function POST(
       where: { teamMemberId_moduleSlug: { teamMemberId: id, moduleSlug } },
       update: { access, assignedBy: auth.name || auth.username },
       create: {
+        companyId: auth.companyId,
         teamMemberId: id,
         moduleSlug,
         access,

@@ -156,11 +156,13 @@ export async function POST(request: NextRequest) {
     const entryIds = asStringArray(body.entryIds);
     const documentIds = asStringArray(body.documentIds);
     const flowIds = asStringArray(body.flowIds);
+    const channelAccountIds = asStringArray(body.channelAccountIds);
     const tools = asToolList(body.tools);
 
     const agent = await prisma.$transaction(async (tx) => {
       const created = await tx.agent.create({
         data: {
+          companyId: auth.companyId,
           name,
           description: asString(body.description),
           status: asString(body.status, "active") || "active",
@@ -178,9 +180,9 @@ export async function POST(request: NextRequest) {
       });
 
       const scopeRows = [
-        ...categoryIds.map((categoryId) => ({ agentId: created.id, categoryId })),
-        ...entryIds.map((entryId) => ({ agentId: created.id, entryId })),
-        ...documentIds.map((documentId) => ({ agentId: created.id, documentId })),
+        ...categoryIds.map((categoryId) => ({ companyId: auth.companyId, agentId: created.id, categoryId })),
+        ...entryIds.map((entryId) => ({ companyId: auth.companyId, agentId: created.id, entryId })),
+        ...documentIds.map((documentId) => ({ companyId: auth.companyId, agentId: created.id, documentId })),
       ];
       if (scopeRows.length) {
         await tx.agentKnowledgeScope.createMany({ data: scopeRows });
@@ -189,6 +191,7 @@ export async function POST(request: NextRequest) {
       if (flowIds.length) {
         await tx.agentWorkflow.createMany({
           data: flowIds.map((flowId, index) => ({
+            companyId: auth.companyId,
             agentId: created.id,
             flowId,
             priority: (index + 1) * 10,
@@ -199,9 +202,28 @@ export async function POST(request: NextRequest) {
       if (tools.length) {
         await tx.agentTool.createMany({
           data: tools.map((tool) => ({
+            companyId: auth.companyId,
             agentId: created.id,
             ...tool,
           })),
+        });
+      }
+
+      if (channelAccountIds.length) {
+        await tx.agentChannelAccount.createMany({
+          data: channelAccountIds.map((channelAccountId, index) => ({
+            companyId: auth.companyId,
+            agentId: created.id,
+            channelAccountId,
+            isPrimary: index === 0,
+            priority: (index + 1) * 10,
+          })),
+        });
+        // Keep ChannelAccount.defaultAgentId (what real routing reads) in
+        // sync with the assignment - see the matching comment in PUT.
+        await tx.channelAccount.updateMany({
+          where: { id: { in: channelAccountIds } },
+          data: { defaultAgentId: created.id },
         });
       }
 

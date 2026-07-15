@@ -53,7 +53,11 @@ export async function PUT(
         await tx.rolePermission.deleteMany({ where: { roleId: id } });
         if (permissions.length > 0) {
           await tx.rolePermission.createMany({
-            data: permissions.map((permission: string) => ({ roleId: id, permission })),
+            data: permissions.map((permission: string) => ({
+              companyId: auth.companyId,
+              roleId: id,
+              permission,
+            })),
           });
         }
       }

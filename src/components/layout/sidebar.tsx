@@ -29,6 +29,8 @@ import {
   Bot,
   Coins,
   Store,
+  Plug,
+  CreditCard,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -37,6 +39,8 @@ import type { Permission } from "@/lib/rbac";
 
 const COLLAPSED_SECTIONS_KEY = "owly-sidebar-collapsed-sections";
 const COLLAPSED_KEY = "owly-sidebar-collapsed";
+
+type NavBadgeKey = "approvals" | "escalatedConversations" | "openTickets";
 
 export interface NavItem {
   name: string;
@@ -47,6 +51,9 @@ export interface NavItem {
   // includes this. Checked against /api/auth's `permissions` field, not a
   // hardcoded role list, so this stays correct after an admin edits a role.
   permission?: Permission;
+  // Keys into the /api/nav-counts response - shows a small count badge next
+  // to this item when > 0.
+  badgeKey?: NavBadgeKey;
 }
 
 export interface NavSection {
@@ -58,10 +65,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
-      { name: "Conversations", href: "/conversations", icon: MessageSquare, permission: "conversations:read" },
-      { name: "Approvals", href: "/approvals", icon: ShieldCheck, permission: "conversations:read" },
+      { name: "Conversations", href: "/conversations", icon: MessageSquare, permission: "conversations:read", badgeKey: "escalatedConversations" },
+      { name: "Approvals", href: "/approvals", icon: ShieldCheck, permission: "conversations:read", badgeKey: "approvals" },
       { name: "Customers", href: "/customers", icon: Contact, permission: "customers:read" },
-      { name: "Tickets", href: "/tickets", icon: Ticket, permission: "tickets:read" },
+      { name: "Tickets", href: "/tickets", icon: Ticket, permission: "tickets:read", badgeKey: "openTickets" },
       { name: "Reporter", href: "/reporter", icon: Bot, permission: "module:read" },
     ],
   },
@@ -88,6 +95,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { name: "Channels", href: "/channels", icon: Radio, permission: "channels:read" },
       { name: "Webhooks", href: "/webhooks", icon: Webhook, permission: "webhooks:read" },
+      { name: "Connectors", href: "/connectors", icon: Plug, permission: "connectors:read" },
     ],
   },
   {
@@ -100,6 +108,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { name: "Administration", href: "/admin", icon: Shield, permission: "admin:read" },
       { name: "API Docs", href: "/api-docs", icon: FileCode },
       { name: "Settings", href: "/settings", icon: Settings, permission: "settings:read" },
+      { name: "Billing", href: "/billing", icon: CreditCard, permission: "billing:read" },
     ],
   },
 ];
@@ -138,6 +147,7 @@ export function Sidebar() {
   // null = not loaded yet, so every gated item stays hidden until we know
   // for sure rather than flashing then disappearing once permissions arrive.
   const [permissions, setPermissions] = useState<Set<string> | null>(null);
+  const [navCounts, setNavCounts] = useState<Partial<Record<NavBadgeKey, number>>>({});
   // Icon-only mode tooltips are portaled to <body> instead of rendered
   // inline: the nav list scrolls (overflow-y-auto), and per the CSS spec an
   // element can't have overflow-x: visible alongside overflow-y: auto - the
@@ -218,6 +228,29 @@ export function Sidebar() {
     };
   }, [pathname]);
 
+  useEffect(() => {
+    let cancelled = false;
+    function loadCounts() {
+      fetch("/api/nav-counts")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: Partial<Record<NavBadgeKey, number>> | null) => {
+          if (!cancelled && data) setNavCounts(data);
+        })
+        .catch(() => {
+          // Nav stays usable without badge counts; keep the last known values.
+        });
+    }
+    loadCounts();
+    // Also refresh periodically, not just on navigation - these counts
+    // (pending approvals, escalated conversations, open tickets) change in
+    // the background while an agent stays on one page.
+    const interval = window.setInterval(loadCounts, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [pathname]);
+
   const navSections = useMemo(() => {
     let sections = NAV_SECTIONS;
     if (installedModules.length > 0) {
@@ -249,7 +282,7 @@ export function Sidebar() {
         </div>
         {!collapsed && (
           <div className="overflow-hidden">
-            <h1 className="text-base font-bold tracking-tight">Cosstigo</h1>
+            <h1 className="text-base font-bold tracking-tight">Paperhuman</h1>
             <p className="text-[10px] text-white/50">AI Customer Care</p>
           </div>
         )}
@@ -330,8 +363,24 @@ export function Sidebar() {
                           : "text-white/65 hover:bg-owly-sidebar-hover hover:text-white"
                       )}
                     >
-                      <item.icon className="h-4 w-4 flex-shrink-0" />
-                      {!collapsed && <span>{item.name}</span>}
+                      <span className="relative flex-shrink-0">
+                        <item.icon className="h-4 w-4" />
+                        {collapsed && Boolean(item.badgeKey && navCounts[item.badgeKey]) && (
+                          <span className="absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-owly-danger text-[9px] font-bold leading-none text-white">
+                            {navCounts[item.badgeKey!]! > 9 ? "9+" : navCounts[item.badgeKey!]}
+                          </span>
+                        )}
+                      </span>
+                      {!collapsed && (
+                        <span className="flex flex-1 items-center justify-between gap-2 min-w-0">
+                          <span className="truncate">{item.name}</span>
+                          {Boolean(item.badgeKey && navCounts[item.badgeKey]) && (
+                            <span className="flex-shrink-0 rounded-full bg-owly-danger px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                              {navCounts[item.badgeKey!]! > 99 ? "99+" : navCounts[item.badgeKey!]}
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}

@@ -22,7 +22,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     const channel = await prisma.channel.findUnique({
-      where: { type },
+      where: { companyId_type: { companyId: auth.companyId, type } },
     });
 
     if (!channel) {
@@ -65,13 +65,14 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const { isActive, config, status } = body;
 
     const channel = await prisma.channel.upsert({
-      where: { type },
+      where: { companyId_type: { companyId: auth.companyId, type } },
       update: {
         isActive: typeof isActive === "boolean" ? isActive : undefined,
         config: config ?? undefined,
         status: status ?? undefined,
       },
       create: {
+        companyId: auth.companyId,
         type,
         isActive: typeof isActive === "boolean" ? isActive : false,
         config: config ?? {},
@@ -113,13 +114,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const channel = await prisma.channel.findUnique({ where: { type } });
+    const channel = await prisma.channel.findUnique({ where: { companyId_type: { companyId: auth.companyId, type } } });
 
     if (action === "disconnect") {
       const updated = await prisma.channel.upsert({
-        where: { type },
+        where: { companyId_type: { companyId: auth.companyId, type } },
         update: { status: "disconnected" },
         create: {
+          companyId: auth.companyId,
           type,
           isActive: false,
           config: {},
@@ -141,7 +143,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
 
       const updated = await prisma.channel.update({
-        where: { type },
+        where: { companyId_type: { companyId: auth.companyId, type } },
         data: { status: "connected", isActive: true },
       });
 

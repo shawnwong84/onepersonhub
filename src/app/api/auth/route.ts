@@ -1,76 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prismaUnscoped } from "@/lib/prisma";
 import {
-  hashPassword,
   verifyPassword,
   generateToken,
   setAuthCookie,
   clearAuthCookie,
   getCurrentUser,
-  isSetupComplete,
 } from "@/lib/auth";
+import { setCurrentCompany } from "@/lib/tenant-context";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 import { isLockedOut, recordFailedLogin, clearLoginAttempts } from "@/lib/login-lockout";
 import { getPermissionsForRole } from "@/lib/rbac";
 import { isUnscoped } from "@/lib/rbac-scope";
 
-// POST /api/auth - Login or Setup
+// POST /api/auth - Login or Logout. Registration lives at POST /api/register
+// (creates a new Company + its first Admin together) - there is no more
+// single-tenant "setup" concept once any company can self-register.
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { action, username, password, name } = body;
-
-  if (action === "setup") {
-    const setupDone = await isSetupComplete();
-    if (setupDone) {
-      return NextResponse.json(
-        { error: "Setup already completed" },
-        { status: 400 }
-      );
-    }
-
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: "Username and password are required" },
-        { status: 400 }
-      );
-    }
-
-    const hashed = await hashPassword(password);
-    const admin = await prisma.admin.create({
-      data: {
-        username,
-        password: hashed,
-        name: name || "Admin",
-        role: "admin",
-      },
-    });
-
-    // Ensure default settings exist
-    await prisma.settings.upsert({
-      where: { id: "default" },
-      update: {},
-      create: { id: "default" },
-    });
-
-    // Ensure channels exist
-    for (const type of ["whatsapp", "email", "phone"]) {
-      await prisma.channel.upsert({
-        where: { type },
-        update: {},
-        create: { type, isActive: false, status: "disconnected" },
-      });
-    }
-
-    const token = generateToken(admin.id, admin.role);
-    const cookie = setAuthCookie(token);
-
-    const response = NextResponse.json({
-      success: true,
-      user: { id: admin.id, username: admin.username, name: admin.name },
-    });
-    response.cookies.set(cookie);
-    return response;
-  }
+  const { action, username, password } = body;
 
   if (action === "login") {
     if (!username || !password) {
@@ -90,7 +38,11 @@ export async function POST(request: NextRequest) {
       return response;
     }
 
-    const admin = await prisma.admin.findUnique({
+    // Not tenant-scoped: username is globally unique across all companies
+    // by design (see prisma/schema.prisma's Admin/TeamMember comments) -
+    // this lookup is exactly how the company is resolved without needing
+    // subdomain routing.
+    const admin = await prismaUnscoped.admin.findUnique({
       where: { username },
       omit: { password: false },
     });
@@ -105,7 +57,7 @@ export async function POST(request: NextRequest) {
       }
 
       clearLoginAttempts(username);
-      const token = generateToken(admin.id, admin.role, "owner", admin.tokenVersion);
+      const token = generateToken(admin.id, admin.companyId, admin.role, "owner", admin.tokenVersion);
       const response = NextResponse.json({
         success: true,
         user: { id: admin.id, username: admin.username, name: admin.name, role: admin.role, userType: "owner" },
@@ -115,7 +67,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Team member login
-    const member = await prisma.teamMember.findUnique({
+    const member = await prismaUnscoped.teamMember.findUnique({
       where: { username },
       omit: { password: false },
     });
@@ -137,7 +89,8 @@ export async function POST(request: NextRequest) {
     }
 
     clearLoginAttempts(username);
-    await prisma.teamMember.update({
+    setCurrentCompany(member.companyId);
+    await prismaUnscoped.teamMember.update({
       where: { id: member.id },
       data: { lastLoginAt: new Date() },
     });
@@ -150,7 +103,7 @@ export async function POST(request: NextRequest) {
       userName: member.name,
     });
 
-    const token = generateToken(member.id, member.rbacRole, "member", member.tokenVersion);
+    const token = generateToken(member.id, member.companyId, member.rbacRole, "member", member.tokenVersion);
     const response = NextResponse.json({
       success: true,
       user: { id: member.id, username: member.username, name: member.name, role: member.rbacRole, userType: "member" },
@@ -171,27 +124,23 @@ export async function POST(request: NextRequest) {
 
 // GET /api/auth - Check auth status
 export async function GET() {
-  const setupDone = await isSetupComplete();
-  if (!setupDone) {
-    return NextResponse.json({ authenticated: false, setupRequired: true });
-  }
-
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json({ authenticated: false, setupRequired: false });
+    return NextResponse.json({ authenticated: false });
   }
+
+  setCurrentCompany(user.companyId);
 
   // Sidebar/nav filtering needs to know what this specific user can access -
   // computed from the live (editable) role/permission tables, not a
   // hardcoded assumption, so it stays correct after an admin edits a role.
   const [permissions, unscoped] = await Promise.all([
-    getPermissionsForRole(user.role),
-    isUnscoped({ userId: user.id, role: user.role, userType: user.userType }),
+    getPermissionsForRole(user.companyId, user.role),
+    isUnscoped({ userId: user.id, companyId: user.companyId, role: user.role, userType: user.userType }),
   ]);
 
   return NextResponse.json({
     authenticated: true,
-    setupRequired: false,
     user,
     permissions,
     isUnscoped: unscoped,

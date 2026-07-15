@@ -104,6 +104,7 @@ export async function POST(request: NextRequest) {
 
     const account = await prisma.channelAccount.create({
       data: {
+        companyId: auth.companyId,
         channel,
         name,
         identifier,

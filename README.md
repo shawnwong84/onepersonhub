@@ -1,8 +1,10 @@
-# Cosstigo
+# Paperhuman
 
-**Self-hosted AI customer care and business automation for one-person teams and small businesses.**
+**The watcher for one-person teams and small businesses.**
 
-Cosstigo turns inbound WhatsApp and email messages into structured work: AI replies grounded in your knowledge base, visual workflows with human approval gates, business records (orders, invoices, leads, stock), and a Reporter Agent that watches everything and tells you what needs attention — before you ask.
+Multi-tenant: each company gets its own isolated workspace on shared infrastructure, enforced at the data-access layer (every query is automatically scoped to the caller's company) and backed by a real foreign-key constraint at the database level, not just an application-level filter. See the in-app Security page for details.
+
+Paperhuman connects to your channels (WhatsApp, email, phone) and systems (ERP connectors), watches for what needs attention, drafts the next step, and escalates to a real human for action, logging every decision in an auditable trail. If stock runs low on something an order needs, the Reporter Agent messages you about it on its next heartbeat, before your customer ever notices.
 
 > Originally derived from the Owly project; substantially extended into a modular SME automation platform.
 
@@ -10,7 +12,7 @@ Cosstigo turns inbound WhatsApp and email messages into structured work: AI repl
 
 ## What it does
 
-**A customer sends a WhatsApp message.** Cosstigo routes it to the right AI agent, checks your workflows first (maybe this is an order — extract it, create a draft order record, ask a human to approve), falls back to a knowledge-base-grounded AI reply, and logs every decision in an auditable trail. If stock runs low on something that order needs, the Reporter Agent messages you about it on its next heartbeat.
+**A customer sends a WhatsApp message.** Paperhuman routes it to the right AI agent, checks your workflows first (maybe this is an order — extract it, create a draft order record, ask a human to approve), falls back to a knowledge-base-grounded AI reply, and logs every decision in an auditable trail. If stock runs low on something that order needs, the Reporter Agent messages you about it on its next heartbeat.
 
 ## Features
 
@@ -102,7 +104,7 @@ Design and progress live in [`docs/`](docs/) — including the completed roadmap
 
 - Additional email inboxes send through their own SMTP credentials, but inbound listening still uses the default Email channel (per-account IMAP listeners are planned).
 - Extra phone numbers share the channel-level Twilio settings.
-- Channel credentials are stored unencrypted in the database — run behind your own perimeter, or wait for the hardening roadmap.
+- Secrets and channel credentials (SMTP/IMAP passwords, provider API keys, OAuth tokens) are encrypted at rest with AES-256-GCM; non-secret config fields (host, port, username) stay plaintext for inspectability.
 
 ## License
 

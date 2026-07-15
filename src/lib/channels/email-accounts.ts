@@ -1,5 +1,6 @@
 import Imap from "imap";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnscoped } from "@/lib/prisma";
+import { setCurrentCompany } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 import {
   processUnreadEmails,
@@ -65,12 +66,13 @@ export async function connectEmailAccount(accountId: string): Promise<void> {
   const state = getState(accountId);
   if (state.imap && state.status === "connected") return;
 
-  const account = await prisma.channelAccount.findUnique({ where: { id: accountId } });
+  const account = await prismaUnscoped.channelAccount.findUnique({ where: { id: accountId } });
   if (!account || account.channel !== "email" || !account.isActive) {
     state.status = "error";
     state.message = "Account not found, not an email account, or inactive";
     return;
   }
+  setCurrentCompany(account.companyId);
 
   const config = getImapConfig((account.credentials || {}) as Record<string, unknown>);
   if (!config) {
@@ -164,7 +166,7 @@ export async function disconnectEmailAccount(accountId: string): Promise<void> {
     state.status = "disconnected";
     state.message = "Disconnected";
   }
-  await prisma.channelAccount
+  await prismaUnscoped.channelAccount
     .update({ where: { id: accountId }, data: { status: "disconnected" } })
     .catch(() => {});
 }
@@ -180,7 +182,7 @@ export async function disconnectEmailAccount(accountId: string): Promise<void> {
  * it here too would poll the same mailbox twice. Called once at boot.
  */
 export async function startAllEmailAccountListeners(): Promise<void> {
-  const accounts = await prisma.channelAccount.findMany({
+  const accounts = await prismaUnscoped.channelAccount.findMany({
     where: { channel: "email", isActive: true, identifier: { not: "default" } },
     select: { id: true, name: true },
   });

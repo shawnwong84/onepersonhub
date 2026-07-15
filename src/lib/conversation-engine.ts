@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 
 /**
@@ -115,6 +116,7 @@ export async function transferConversation(
   // Add internal note about transfer
   await prisma.internalNote.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId,
       content: `Conversation transferred from ${fromMemberName} to ${member.name}${note ? `: ${note}` : ""}`,
       authorName: "System",
@@ -165,6 +167,7 @@ export async function mergeConversations(
   // Add merge note
   await prisma.internalNote.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId: primaryId,
       content: `Merged with conversation ${secondaryId} (${secondary.customerName} via ${secondary.channel})`,
       authorName: "System",
@@ -202,6 +205,7 @@ export async function snoozeConversation(
 
   await prisma.internalNote.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId,
       content: `Snoozed until ${snoozeUntil.toLocaleDateString()}: ${reason}`,
       authorName,
@@ -289,14 +293,15 @@ export async function executeMacro(
         }
 
         case "add_tag": {
+          const companyId = currentCompanyId();
           let tag = await prisma.tag.findUnique({
-            where: { name: action.value },
+            where: { companyId_name: { companyId, name: action.value } },
           });
           if (!tag) {
-            tag = await prisma.tag.create({ data: { name: action.value } });
+            tag = await prisma.tag.create({ data: { companyId, name: action.value } });
           }
           await prisma.conversationTag.create({
-            data: { conversationId, tagId: tag.id },
+            data: { companyId, conversationId, tagId: tag.id },
           }).catch(() => { /* already tagged */ });
           executed++;
           break;
@@ -304,14 +309,14 @@ export async function executeMacro(
 
         case "add_note":
           await prisma.internalNote.create({
-            data: { conversationId, content: action.value, authorName },
+            data: { companyId: currentCompanyId(), conversationId, content: action.value, authorName },
           });
           executed++;
           break;
 
         case "send_message":
           await prisma.message.create({
-            data: { conversationId, role: "assistant", content: action.value },
+            data: { companyId: currentCompanyId(), conversationId, role: "assistant", content: action.value },
           });
           executed++;
           break;

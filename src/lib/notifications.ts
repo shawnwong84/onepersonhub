@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import { emitNotification } from "@/lib/realtime";
 import { logger } from "@/lib/logger";
 
@@ -17,6 +18,7 @@ export async function createNotification(input: CreateNotificationInput) {
   try {
     const notification = await prisma.notification.create({
       data: {
+        companyId: currentCompanyId(),
         type: input.type,
         title: input.title,
         message: input.message,

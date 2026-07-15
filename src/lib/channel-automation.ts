@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 
 export type ChannelAutomationMode =
   | "manual_only"
@@ -22,7 +23,7 @@ export async function getChannelAutomationSettings(
   channelType: string
 ): Promise<ChannelAutomationSettings> {
   const channel = await prisma.channel.findUnique({
-    where: { type: channelType },
+    where: { companyId_type: { companyId: currentCompanyId(), type: channelType } },
     select: { isActive: true, config: true },
   });
 

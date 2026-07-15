@@ -1,5 +1,6 @@
 import OpenAI from "openai";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnscoped } from "@/lib/prisma";
+import { setCurrentCompany } from "@/lib/tenant-context";
 import { chat, createNewConversation } from "@/lib/ai/engine";
 import { resolveCustomer } from "@/lib/customer-resolver";
 
@@ -12,8 +13,8 @@ interface PhoneConfig {
   aiApiKey: string;
 }
 
-async function getPhoneConfig(): Promise<PhoneConfig | null> {
-  const settings = await prisma.settings.findFirst();
+async function getPhoneConfig(companyId: string): Promise<PhoneConfig | null> {
+  const settings = await prismaUnscoped.settings.findUnique({ where: { companyId } });
   if (!settings?.twilioSid || !settings?.twilioToken) return null;
 
   return {
@@ -24,6 +25,19 @@ async function getPhoneConfig(): Promise<PhoneConfig | null> {
     elevenLabsVoice: settings.elevenLabsVoice,
     aiApiKey: settings.aiApiKey,
   };
+}
+
+/**
+ * Twilio webhooks carry no session — the company that owns this call is
+ * resolved from which company's Settings row has this Twilio number configured.
+ */
+async function resolvePhoneCompanyId(toNumber: string): Promise<string | null> {
+  if (!toNumber) return null;
+  const settings = await prismaUnscoped.settings.findFirst({
+    where: { twilioPhone: toNumber },
+    select: { companyId: true },
+  });
+  return settings?.companyId || null;
 }
 
 // Speech-to-Text using OpenAI Whisper
@@ -125,9 +139,18 @@ function escapeXml(text: string): string {
 // Handle incoming call
 export async function handleIncomingCall(
   from: string,
-  callSid: string
+  callSid: string,
+  to: string
 ): Promise<string> {
-  const config = await getPhoneConfig();
+  const companyId = await resolvePhoneCompanyId(to);
+  if (!companyId) {
+    return generateTwiMLSay(
+      "Sorry, the phone system is not properly configured. Please try again later."
+    );
+  }
+  setCurrentCompany(companyId);
+
+  const config = await getPhoneConfig(companyId);
   if (!config) {
     return generateTwiMLSay(
       "Sorry, the phone system is not properly configured. Please try again later."
@@ -137,6 +160,7 @@ export async function handleIncomingCall(
   // Create call log
   await prisma.callLog.create({
     data: {
+      companyId,
       callSid,
       from,
       to: config.twilioPhone,
@@ -182,6 +206,15 @@ export async function handleSpeechInput(
     return generateTwiMLSay("I didn't catch that. Could you please repeat?");
   }
 
+  const conversation = await prismaUnscoped.conversation.findUnique({
+    where: { id: conversationId },
+    select: { companyId: true },
+  });
+  if (!conversation) {
+    return generateTwiMLSay("Sorry, this call could not be found. Please try again later.");
+  }
+  setCurrentCompany(conversation.companyId);
+
   // Get AI response
   let aiResponse: string;
   try {
@@ -201,7 +234,7 @@ export async function handleSpeechInput(
 
 // End call handler
 export async function handleCallEnd(callSid: string, duration: number) {
-  await prisma.callLog.updateMany({
+  await prismaUnscoped.callLog.updateMany({
     where: { callSid },
     data: {
       status: "completed",

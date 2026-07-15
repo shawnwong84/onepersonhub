@@ -33,6 +33,15 @@ interface Flow {
   isActive: boolean;
 }
 
+interface ChannelAccountOption {
+  id: string;
+  channel: string;
+  name: string;
+  identifier: string;
+  isActive: boolean;
+  defaultAgent?: { id: string; name: string } | null;
+}
+
 interface AgentTool {
   id?: string;
   toolType: string;
@@ -57,6 +66,7 @@ interface Agent {
   metadata?: {
     channel?: string;
   } | null;
+  channelAccounts?: Array<{ channelAccountId: string }>;
   knowledgeScopes?: Array<{ categoryId?: string | null }>;
   workflows?: Array<{ flowId: string; flow: Flow }>;
   tools?: AgentTool[];
@@ -81,7 +91,7 @@ const defaultForm = {
   requireApproval: false,
   useGlobalKnowledge: true,
   escalationDepartmentId: "",
-  channel: "whatsapp",
+  channelAccountIds: [] as string[],
   categoryIds: [] as string[],
   flowIds: [] as string[],
   tools: [
@@ -102,6 +112,14 @@ const CHANNEL_OPTIONS = [
   { value: "telegram", label: "Telegram" },
 ];
 
+// The app supports exactly one account per channel type today (the
+// "default" ChannelAccount row backing each Primary connection card) - only
+// WhatsApp and Email currently get that row created; Phone routing doesn't
+// use ChannelAccount yet, so its card always shows as "connect first".
+const PRIMARY_CHANNEL_OPTIONS = CHANNEL_OPTIONS.filter((option) =>
+  ["whatsapp", "email", "phone"].includes(option.value)
+);
+
 function formFromAgent(agent: Agent) {
   return {
     name: agent.name,
@@ -115,7 +133,7 @@ function formFromAgent(agent: Agent) {
     requireApproval: agent.requireApproval,
     useGlobalKnowledge: agent.useGlobalKnowledge,
     escalationDepartmentId: agent.escalationDepartmentId || "",
-    channel: agent.metadata?.channel || "whatsapp",
+    channelAccountIds: agent.channelAccounts?.map((ca) => ca.channelAccountId) || [],
     categoryIds:
       agent.knowledgeScopes
         ?.map((scope) => scope.categoryId)
@@ -158,6 +176,7 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [flows, setFlows] = useState<Flow[]>([]);
+  const [channelAccounts, setChannelAccounts] = useState<ChannelAccountOption[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
   const [loading, setLoading] = useState(true);
@@ -205,17 +224,22 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
   const loadData = useCallback(async (preferredAgentId?: string | null) => {
     setError("");
     try {
-      const [agentRes, categoryRes, flowRes, departmentRes, analyticsRes] = await Promise.all([
+      const [agentRes, categoryRes, flowRes, departmentRes, analyticsRes, channelAccountRes] = await Promise.all([
         fetch("/api/agents?limit=100"),
         fetch("/api/knowledge/categories?limit=100"),
         fetch("/api/flows?limit=100"),
         fetch("/api/team/departments"),
         fetch("/api/agents/analytics?days=30"),
+        fetch("/api/channel-accounts?limit=200"),
       ]);
 
       if (!agentRes.ok) throw new Error("Failed to fetch agents");
       if (!categoryRes.ok) throw new Error("Failed to fetch KB categories");
       if (!flowRes.ok) throw new Error("Failed to fetch workflows");
+      if (channelAccountRes.ok) {
+        const channelAccountPayload = await channelAccountRes.json();
+        setChannelAccounts(unwrapListResponse<ChannelAccountOption>(channelAccountPayload));
+      }
       if (departmentRes.ok) {
         const departmentPayload = await departmentRes.json();
         const list = Array.isArray(departmentPayload) ? departmentPayload : departmentPayload.data || [];
@@ -307,10 +331,7 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          metadata: { channel: form.channel },
-        }),
+        body: JSON.stringify(form),
       });
 
       if (!res.ok) {
@@ -408,8 +429,9 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-owly-text-light">
                     <span>
-                      {CHANNEL_OPTIONS.find((option) => option.value === agent.metadata?.channel)?.label ||
-                        "WhatsApp"}
+                      {agent._count?.channelAccounts
+                        ? `${agent._count.channelAccounts} account${agent._count.channelAccounts === 1 ? "" : "s"}`
+                        : "No channel assigned"}
                     </span>
                     <span>{agent._count?.knowledgeScopes || 0} KB scopes</span>
                     <span>{agent._count?.workflows || 0} workflows</span>
@@ -555,36 +577,67 @@ export function AgentsClient({ routeAgentId = null }: { routeAgentId?: string | 
               <AssignmentCard
                 icon={Radio}
                 title="Assigned channel"
-                subtitle="Choose the single channel this agent is responsible for."
+                subtitle="Choose which channel this agent is the default agent for."
               >
                 <div className="grid gap-3 md:grid-cols-2">
-                  {CHANNEL_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setForm({ ...form, channel: option.value })}
-                      className={cn(
-                        "rounded-lg border p-4 text-left transition-colors",
-                        form.channel === option.value
-                          ? "border-owly-primary bg-owly-primary/10"
-                          : "border-owly-border bg-owly-surface hover:bg-owly-bg"
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-owly-text">
-                          {option.label}
-                        </span>
-                        {form.channel === option.value && (
-                          <span className="rounded-full bg-owly-primary px-2 py-0.5 text-xs font-medium text-white">
-                            Selected
-                          </span>
+                  {PRIMARY_CHANNEL_OPTIONS.map((option) => {
+                    const account = channelAccounts.find(
+                      (item) => item.channel === option.value && item.identifier === "default"
+                    );
+                    const checked = Boolean(account && form.channelAccountIds.includes(account.id));
+                    const takenByAnother =
+                      account?.defaultAgent && account.defaultAgent.id !== selectedAgentId && !checked;
+
+                    if (!account) {
+                      return (
+                        <div
+                          key={option.value}
+                          className="rounded-lg border border-dashed border-owly-border p-4 text-left opacity-60"
+                        >
+                          <span className="font-semibold text-owly-text">{option.label}</span>
+                          <p className="mt-1 text-xs text-owly-text-light">
+                            Connect this channel first from Settings &gt; Channels.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            channelAccountIds: toggleValue(form.channelAccountIds, account.id),
+                          })
+                        }
+                        className={cn(
+                          "rounded-lg border p-4 text-left transition-colors",
+                          checked
+                            ? "border-owly-primary bg-owly-primary/10"
+                            : "border-owly-border bg-owly-surface hover:bg-owly-bg"
                         )}
-                      </div>
-                      <p className="mt-1 text-xs text-owly-text-light">
-                        This agent handles {option.label.toLowerCase()} conversations.
-                      </p>
-                    </button>
-                  ))}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-owly-text">{option.label}</span>
+                          {checked && (
+                            <span className="rounded-full bg-owly-primary px-2 py-0.5 text-xs font-medium text-white">
+                              Selected
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-owly-text-light">
+                          This agent handles {option.label.toLowerCase()} conversations.
+                        </p>
+                        {takenByAnother && (
+                          <p className="mt-1 text-xs text-owly-warning">
+                            Currently: {account.defaultAgent!.name} (selecting reassigns it here)
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </AssignmentCard>
 

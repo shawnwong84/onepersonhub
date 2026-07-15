@@ -2,6 +2,7 @@ import type { Prisma, BusinessModule } from "@/generated/prisma/client";
 import type { CanvasFlowNode } from "@/lib/flow-builder";
 import type { MarketplaceModule } from "@/lib/marketplace/catalog";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 
 function moduleRecordType(module: MarketplaceModule) {
   return (module.records[0] || "Record").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "record";
@@ -180,14 +181,16 @@ export async function ensureModuleScaffold(module: MarketplaceModule, moduleStat
     flows: [],
   };
 
+  const companyId = currentCompanyId();
   const category = await prisma.category.findFirst({
     where: { name: `${module.name} KB` },
   }) || await prisma.category.create({
     data: {
+      companyId,
       name: `${module.name} KB`,
       description: `Knowledge scope installed by the ${module.name} module.`,
       icon: "module",
-      color: "#4A7C9B",
+      color: "#F97316",
     },
   });
   created.categoryId = category.id;
@@ -196,6 +199,7 @@ export async function ensureModuleScaffold(module: MarketplaceModule, moduleStat
     where: { title: `${module.name} acknowledgement` },
   }) || await prisma.cannedResponse.create({
     data: {
+      companyId,
       title: `${module.name} acknowledgement`,
       category: module.name,
       shortcut: `/${module.slug.replace(/[^a-z0-9]+/g, "-")}`,
@@ -207,8 +211,8 @@ export async function ensureModuleScaffold(module: MarketplaceModule, moduleStat
   const tagIds: string[] = [];
   for (const tagName of [`module:${module.slug}`, ...module.records.map((record) => `${module.slug}:${record.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`)]) {
     const tag = await prisma.tag.upsert({
-      where: { name: tagName },
-      create: { name: tagName, color: "#4A7C9B" },
+      where: { companyId_name: { companyId, name: tagName } },
+      create: { companyId, name: tagName, color: "#F97316" },
       update: {},
     });
     tagIds.push(tag.id);
@@ -224,6 +228,7 @@ export async function ensureModuleScaffold(module: MarketplaceModule, moduleStat
     },
   }) || await prisma.agent.create({
     data: {
+      companyId,
       name: `${module.name} Agent`,
       description: `Handles ${module.name} automation for ${module.channels.join(", ")}.`,
       status: "active",
@@ -231,7 +236,7 @@ export async function ensureModuleScaffold(module: MarketplaceModule, moduleStat
       fallbackMode: "ai_reply",
       requireApproval: module.approvals.length > 0,
       systemPrompt: [
-        `You are the ${module.name} Agent for Cosstigo.`,
+        `You are the ${module.name} Agent for Paperhuman.`,
         "Use module-scoped knowledge and workflows first.",
         "Never perform risky customer-facing action without configured approval.",
       ].join("\n"),
@@ -241,7 +246,7 @@ export async function ensureModuleScaffold(module: MarketplaceModule, moduleStat
         installedByModule: true,
       } as Prisma.InputJsonObject,
       knowledgeScopes: {
-        create: [{ categoryId: category.id, scopeType: "include" }],
+        create: [{ companyId, categoryId: category.id, scopeType: "include" }],
       },
     },
   });
@@ -260,6 +265,7 @@ export async function ensureModuleScaffold(module: MarketplaceModule, moduleStat
     });
     const flow = existing || await prisma.flow.create({
       data: {
+        companyId,
         ...template,
         nodes: template.nodes as unknown as Prisma.InputJsonValue,
         edges: template.edges as unknown as Prisma.InputJsonValue,
@@ -269,7 +275,7 @@ export async function ensureModuleScaffold(module: MarketplaceModule, moduleStat
 
     await prisma.agentWorkflow.upsert({
       where: { agentId_flowId: { agentId: agent.id, flowId: flow.id } },
-      create: { agentId: agent.id, flowId: flow.id, priority: channel === "email" ? 10 : 20 },
+      create: { companyId, agentId: agent.id, flowId: flow.id, priority: channel === "email" ? 10 : 20 },
       update: { isActive: true },
     });
   }

@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
 
     const rule = await prisma.automationRule.create({
       data: {
+        companyId: auth.companyId,
         name: name.trim(),
         description: description?.trim() || "",
         type,

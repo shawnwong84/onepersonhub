@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
 
   const webhook = await prisma.webhook.create({
     data: {
+      companyId: auth.companyId,
       name,
       description: description || "",
       url,

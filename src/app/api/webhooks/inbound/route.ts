@@ -122,6 +122,7 @@ export async function POST(request: NextRequest) {
     if (!conversation) {
       conversation = await prisma.conversation.create({
         data: {
+          companyId: auth.companyId,
           channel: "webhook",
           customerName: customerName || "Webhook",
           customerContact: customerContact || "webhook",
@@ -133,6 +134,7 @@ export async function POST(request: NextRequest) {
 
     await prisma.message.create({
       data: {
+        companyId: auth.companyId,
         conversationId: conversation.id,
         role: "customer",
         content: message,

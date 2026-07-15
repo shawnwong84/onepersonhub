@@ -313,6 +313,7 @@ export async function POST(
           const isTicketAutomation = approval.source === "ticket_automation";
           const saved = await prisma.message.create({
             data: {
+              companyId: auth.companyId,
               conversationId: id,
               role: "assistant",
               content: payload,
@@ -353,6 +354,7 @@ export async function POST(
 
     const systemMessage = await prisma.message.create({
       data: {
+        companyId: auth.companyId,
         conversationId: id,
         role: "system",
         content: decisionComment

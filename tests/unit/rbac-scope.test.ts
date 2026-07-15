@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { applyRoleFixture } from "../setup";
+import { applyRoleFixture, TEST_COMPANY_ID } from "../setup";
 import {
   canAccessModule,
   conversationScope,
@@ -12,10 +12,10 @@ import { CORE_MODULE_SLUGS, MARKETPLACE_MODULES } from "@/lib/marketplace/catalo
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 
-const owner = { userId: "owner-1", role: "admin", userType: "owner" as const };
-const supervisor = { userId: "sup-1", role: "supervisor", userType: "member" as const };
-const agent = { userId: "agent-1", role: "agent", userType: "member" as const };
-const viewer = { userId: "viewer-1", role: "viewer", userType: "member" as const };
+const owner = { userId: "owner-1", companyId: TEST_COMPANY_ID, role: "admin", userType: "owner" as const };
+const supervisor = { userId: "sup-1", companyId: TEST_COMPANY_ID, role: "supervisor", userType: "member" as const };
+const agent = { userId: "agent-1", companyId: TEST_COMPANY_ID, role: "agent", userType: "member" as const };
+const viewer = { userId: "viewer-1", companyId: TEST_COMPANY_ID, role: "viewer", userType: "member" as const };
 
 describe("rbac-scope", () => {
   beforeEach(() => {

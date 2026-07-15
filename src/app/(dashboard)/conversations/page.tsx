@@ -23,6 +23,7 @@ import {
   FileText,
   StickyNote,
   UserRound,
+  X,
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
@@ -392,6 +393,7 @@ function ConversationsPageContent() {
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [approvalEditText, setApprovalEditText] = useState("");
   const [approvalComment, setApprovalComment] = useState("");
+  const [approvalPanelOpen, setApprovalPanelOpen] = useState(false);
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunData[]>([]);
   const [presence, setPresence] = useState<PresenceData[]>([]);
   const [runsOpen, setRunsOpen] = useState(false);
@@ -779,6 +781,7 @@ function ConversationsPageContent() {
       if (res.ok) {
         const updated = await res.json();
         setSelectedConversation(updated);
+        setApprovalPanelOpen(false);
         fetchConversations();
         fetchWorkflowRuns(selectedId);
       } else if (previousConversation) {
@@ -1382,25 +1385,56 @@ function ConversationsPageContent() {
               )}
 
               {activePendingApproval && (
-                <div className="border-b border-violet-200 bg-violet-50 px-4 py-3">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-lg bg-white p-2 text-violet-700">
-                      <ShieldCheck className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-bold text-violet-900">
-                          Approval required
-                        </span>
-                        <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-violet-700">
-                          {activePendingApproval.flowName}
-                        </span>
+                <button
+                  type="button"
+                  onClick={() => setApprovalPanelOpen(true)}
+                  className="flex w-full items-center justify-between gap-3 border-b border-violet-200 bg-violet-50 px-4 py-2 text-left hover:bg-violet-100"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 flex-shrink-0 text-violet-700" />
+                    <span className="text-sm font-bold text-violet-900">Approval required:</span>
+                    <span className="truncate text-sm font-semibold text-violet-950">
+                      {activePendingApproval.title}
+                    </span>
+                  </div>
+                  <span className="flex-shrink-0 rounded-lg bg-violet-600 px-3 py-1 text-xs font-semibold text-white">
+                    Review
+                  </span>
+                </button>
+              )}
+
+              {activePendingApproval && approvalPanelOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40 bg-black/20"
+                    onClick={() => setApprovalPanelOpen(false)}
+                  />
+                  <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-violet-200 bg-white shadow-2xl">
+                    <div className="flex items-start justify-between gap-3 border-b border-violet-200 bg-violet-50 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-bold text-violet-900">
+                            Approval required
+                          </span>
+                          <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-violet-700">
+                            {activePendingApproval.flowName}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm font-semibold text-violet-950">
+                          {activePendingApproval.title}
+                        </p>
                       </div>
-                      <p className="mt-1 text-sm font-semibold text-violet-950">
-                        {activePendingApproval.title}
-                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setApprovalPanelOpen(false)}
+                        className="flex-shrink-0 rounded-lg p-1.5 text-violet-700 hover:bg-white"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="flex-1 px-4 py-3">
                       {activePendingApproval.instructions && (
-                        <p className="mt-1 text-xs text-violet-700">
+                        <p className="text-xs text-violet-700">
                           {activePendingApproval.instructions}
                         </p>
                       )}
@@ -1463,7 +1497,7 @@ function ConversationsPageContent() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </>
               )}
 
               <div className="border-b border-owly-border bg-owly-bg px-4 py-3">
@@ -1561,7 +1595,7 @@ function ConversationsPageContent() {
               </div>
 
               {/* Messages Thread */}
-              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 {selectedConversation.messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center">
                     <MessageSquare className="h-8 w-8 text-owly-text-light opacity-40 mb-2" />

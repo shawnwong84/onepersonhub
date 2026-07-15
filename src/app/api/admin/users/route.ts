@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnscoped } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { parsePagination, paginatedResponse } from "@/lib/pagination";
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { username, password, name, role } = body;
+    const { username, password, name, role, email } = body;
 
     if (!username || typeof username !== "string" || username.trim().length === 0) {
       return NextResponse.json(
@@ -62,7 +62,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = await prisma.admin.findUnique({
+    // Username is globally unique across every company (see prisma/schema.prisma) -
+    // must check across all companies, not just the caller's own.
+    const existing = await prismaUnscoped.admin.findUnique({
       where: { username: username.trim() },
     });
     if (existing) {
@@ -75,10 +77,14 @@ export async function POST(request: NextRequest) {
     const validRoles = ["admin", "editor", "viewer"];
     const userRole = validRoles.includes(role) ? role : "viewer";
 
+    const trimmedEmail = typeof email === "string" ? email.trim() : "";
+
     const hashed = await hashPassword(password);
     const user = await prisma.admin.create({
       data: {
+        companyId: auth.companyId,
         username: username.trim(),
+        email: trimmedEmail || `${username.trim()}@placeholder.local`,
         password: hashed,
         name: name?.trim() || username.trim(),
         role: userRole,

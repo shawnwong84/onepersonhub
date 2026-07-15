@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     // Load settings for AI configuration
     const settings = await prisma.settings.findUnique({
-      where: { id: "default" },
+      where: { companyId: auth.companyId },
     });
 
     if (!settings?.aiApiKey) {

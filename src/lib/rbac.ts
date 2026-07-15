@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { prismaUnscoped } from "@/lib/prisma";
 
 /**
  * Role-Based Access Control (RBAC) System
@@ -152,6 +152,18 @@ export const DEFAULT_ROLE_PERMISSIONS = {
 
   // Export
   "export:read": ["admin"],
+
+  // ERP Connectors (SAP, Oracle, Microsoft 365, Dynamics 365 Business
+  // Central, Odoo) - integration credentials, same policy bucket as
+  // channels/webhooks/team/settings: admin only by default.
+  "connectors:read": ["admin"],
+  "connectors:create": ["admin"],
+  "connectors:update": ["admin"],
+  "connectors:delete": ["admin"],
+
+  // Billing (Stripe subscription, module quota) - admin only.
+  "billing:read": ["admin"],
+  "billing:update": ["admin"],
 } as const;
 
 export type Permission = keyof typeof DEFAULT_ROLE_PERMISSIONS;
@@ -163,11 +175,17 @@ interface CachedRole {
   permissions: Set<string>;
 }
 
-let roleCache: Map<string, CachedRole> | null = null;
-let roleCacheLoading: Promise<Map<string, CachedRole>> | null = null;
+// Roles are per-company (each company gets its own independently-editable
+// copies of the built-in roles, seeded at registration - see
+// src/app/api/register/route.ts) so the cache is keyed by companyId, not
+// just role name. Two companies can each have their own "agent" role with
+// completely different permissions.
+const roleCacheByCompany = new Map<string, Map<string, CachedRole>>();
+const roleCacheLoading = new Map<string, Promise<Map<string, CachedRole>>>();
 
-async function loadRoleCache(): Promise<Map<string, CachedRole>> {
-  const roles = await prisma.role.findMany({
+async function loadRoleCache(companyId: string): Promise<Map<string, CachedRole>> {
+  const roles = await prismaUnscoped.role.findMany({
+    where: { companyId },
     include: { permissions: { select: { permission: true } } },
   });
   const next = new Map<string, CachedRole>();
@@ -180,29 +198,38 @@ async function loadRoleCache(): Promise<Map<string, CachedRole>> {
   return next;
 }
 
-async function getRoleCache(): Promise<Map<string, CachedRole>> {
-  if (roleCache) return roleCache;
-  if (!roleCacheLoading) {
-    roleCacheLoading = loadRoleCache().then((cache) => {
-      roleCache = cache;
-      roleCacheLoading = null;
+async function getRoleCache(companyId: string): Promise<Map<string, CachedRole>> {
+  const cached = roleCacheByCompany.get(companyId);
+  if (cached) return cached;
+
+  let loading = roleCacheLoading.get(companyId);
+  if (!loading) {
+    loading = loadRoleCache(companyId).then((cache) => {
+      roleCacheByCompany.set(companyId, cache);
+      roleCacheLoading.delete(companyId);
       return cache;
     });
+    roleCacheLoading.set(companyId, loading);
   }
-  return roleCacheLoading;
-}
-
-/** Call after any write to Role/RolePermission so the next check re-reads the DB. */
-export function invalidateRoleCache(): void {
-  roleCache = null;
-  roleCacheLoading = null;
+  return loading;
 }
 
 /**
- * Check if a role has a specific permission.
+ * Call after any write to Role/RolePermission so the next check re-reads
+ * the DB. Clears the whole cache rather than just one company's entry -
+ * role edits are infrequent, and a full clear is simple and always correct
+ * versus getting per-company invalidation subtly wrong.
  */
-export async function hasPermission(role: string, permission: Permission): Promise<boolean> {
-  const cache = await getRoleCache();
+export function invalidateRoleCache(): void {
+  roleCacheByCompany.clear();
+  roleCacheLoading.clear();
+}
+
+/**
+ * Check if a role has a specific permission, within a given company.
+ */
+export async function hasPermission(companyId: string, role: string, permission: Permission): Promise<boolean> {
+  const cache = await getRoleCache(companyId);
   return cache.get(role)?.permissions.has(permission) ?? false;
 }
 
@@ -211,15 +238,15 @@ export async function hasPermission(role: string, permission: Permission): Promi
  * assignments (viewer/agent today) - see rbac-scope.ts's isUnscoped, which
  * also always treats userType "owner" as unscoped regardless of role.
  */
-export async function isRoleUnscoped(role: string): Promise<boolean> {
-  const cache = await getRoleCache();
+export async function isRoleUnscoped(companyId: string, role: string): Promise<boolean> {
+  const cache = await getRoleCache(companyId);
   return cache.get(role)?.isUnscoped ?? false;
 }
 
 /**
- * Get all permissions for a role.
+ * Get all permissions for a role, within a given company.
  */
-export async function getPermissionsForRole(role: string): Promise<Permission[]> {
-  const cache = await getRoleCache();
+export async function getPermissionsForRole(companyId: string, role: string): Promise<Permission[]> {
+  const cache = await getRoleCache(companyId);
   return Array.from(cache.get(role)?.permissions ?? []) as Permission[];
 }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 
 /**
@@ -95,6 +96,7 @@ async function createCustomer(
 ): Promise<string> {
   const customer = await prisma.customer.create({
     data: {
+      companyId: currentCompanyId(),
       name: name || "Unknown",
       firstContact: new Date(),
       lastContact: new Date(),

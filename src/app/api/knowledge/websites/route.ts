@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
     const mode = body.mode || "single_url";
     const source = await prisma.websiteSource.create({
       data: {
+        companyId: auth.companyId,
         categoryId,
         url,
         mode,

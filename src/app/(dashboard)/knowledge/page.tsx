@@ -158,7 +158,7 @@ export default function KnowledgeBasePage() {
   // Category modal
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CategoryWithCount | null>(null);
-  const [categoryForm, setCategoryForm] = useState({ name: "", description: "", icon: "folder", color: "#4A7C9B" });
+  const [categoryForm, setCategoryForm] = useState({ name: "", description: "", icon: "folder", color: "#F97316" });
   const [savingCategory, setSavingCategory] = useState(false);
 
   // Entry modal
@@ -278,7 +278,7 @@ export default function KnowledgeBasePage() {
       });
     } else {
       setEditingCategory(null);
-      setCategoryForm({ name: "", description: "", icon: "folder", color: "#4A7C9B" });
+      setCategoryForm({ name: "", description: "", icon: "folder", color: "#F97316" });
     }
     setShowCategoryModal(true);
   }
@@ -612,7 +612,7 @@ export default function KnowledgeBasePage() {
 
   // --- Category color presets ---
   const colorPresets = [
-    "#4A7C9B", "#2D5A7B", "#C4956A", "#6B8E5B", "#9B6B9E",
+    "#F97316", "#EA580C", "#C4956A", "#6B8E5B", "#9B6B9E",
     "#C75C5C", "#D4964A", "#5B8E8E", "#7C6B9B", "#4A9B7C",
   ];
 

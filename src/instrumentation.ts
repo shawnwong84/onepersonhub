@@ -25,5 +25,10 @@ export async function register() {
     startAllEmailAccountListeners().catch((error) =>
       logger.error("Failed to start email account listeners:", error)
     );
+
+    const { startAllWhatsAppAccountListeners } = await import("@/lib/channels/whatsapp-accounts");
+    startAllWhatsAppAccountListeners().catch((error) =>
+      logger.error("Failed to start WhatsApp account listeners:", error)
+    );
   }
 }

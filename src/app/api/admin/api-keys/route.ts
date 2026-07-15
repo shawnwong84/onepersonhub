@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
 
     const apiKey = await prisma.apiKey.create({
       data: {
+        companyId: auth.companyId,
         name: name.trim(),
         key: fullKey,
       },

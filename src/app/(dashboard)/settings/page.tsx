@@ -766,7 +766,7 @@ function WhatsAppSection({
           Choose between WhatsApp Web (free, requires QR scan) or the official WhatsApp Business API (paid, more reliable).
         </p>
       </div>
-      <FormField label="Connection Mode" description="Select how Cosstigo connects to WhatsApp.">
+      <FormField label="Connection Mode" description="Select how Paperhuman connects to WhatsApp.">
         <SelectInput
           value={data.whatsappMode}
           onChange={(v) => update("whatsappMode", v)}
@@ -983,7 +983,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <>
-        <Header title="Settings" description="Configure your Cosstigo instance" />
+        <Header title="Settings" description="Configure your Paperhuman instance" />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-owly-primary" />
         </div>
@@ -995,7 +995,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <Header title="Settings" description="Configure your Cosstigo instance" />
+      <Header title="Settings" description="Configure your Paperhuman instance" />
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-4xl mx-auto md:flex md:items-start md:gap-6">
           {/* Section nav - vertical sidebar-style list on md+ (matches the

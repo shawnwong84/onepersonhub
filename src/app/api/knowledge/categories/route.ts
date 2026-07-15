@@ -57,10 +57,11 @@ export async function POST(request: NextRequest) {
 
     const category = await prisma.category.create({
       data: {
+        companyId: auth.companyId,
         name: name.trim(),
         description: description?.trim() || "",
         icon: icon || "folder",
-        color: color || "#4A7C9B",
+        color: color || "#F97316",
         sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
       },
       include: {

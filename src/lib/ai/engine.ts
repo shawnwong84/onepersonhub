@@ -7,6 +7,7 @@ import { estimateTokens } from "@/lib/knowledge-ingestion";
 import { searchKnowledgeBase } from "./semantic-search";
 import { resolveAgentRoute } from "@/lib/agent-router";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
+import { currentCompanyId } from "@/lib/tenant-context";
 import type {
   AIMessage,
   AIConfig,
@@ -54,11 +55,12 @@ ${knowledgeSection}
 
 ## Important Guidelines
 - Always be helpful and try to resolve the customer's issue
-- If you cannot answer a question from the knowledge base, honestly say so and offer to connect them with a team member
+- If a customer references an order number, ticket, or any other specific record, use find_business_record to look it up before answering - never guess or assume its status
+- If you cannot answer a question from the knowledge base or a record lookup, honestly say so and offer to connect them with a team member
 - Use the create_ticket tool when a customer reports a problem that needs human intervention
 - Use send_internal_email to notify relevant team members about urgent issues
 - Use get_customer_history to check if the customer has contacted before
-- Never make up information that isn't in your knowledge base
+- Never make up information that isn't in your knowledge base or returned by a tool
 - Keep responses concise but thorough
 - The customer is contacting via: ${context.channel}
 ${context.customerName !== "Unknown" ? `- Customer name: ${context.customerName}` : ""}
@@ -103,7 +105,7 @@ async function getRelevantKnowledgeBase(query: string, agentId?: string | null):
 async function getAIConfig(): Promise<AIConfig & ConversationContext> {
   let settings = await prisma.settings.findFirst();
   if (!settings) {
-    settings = await prisma.settings.create({ data: { id: "default" } });
+    settings = await prisma.settings.create({ data: { companyId: currentCompanyId() } });
   }
 
   return {
@@ -147,6 +149,7 @@ export async function chat(
   // still appear in the inbox if AI is not configured or temporarily fails.
   const savedUserMessage = await prisma.message.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId,
       role: "customer",
       content: userMessage,
@@ -168,6 +171,7 @@ export async function chat(
     const response = "AI is not configured. Please add your API key in Settings > AI Configuration.";
     const savedMessage = await prisma.message.create({
       data: {
+        companyId: currentCompanyId(),
         conversationId,
         role: "assistant",
         content: response,
@@ -254,6 +258,7 @@ export async function chat(
   const answerTokens = estimateTokens(response);
   await prisma.tokenUsage.create({
     data: {
+      companyId: currentCompanyId(),
       provider: config.provider || "openai",
       model: config.model,
       feature: "conversation_ai",
@@ -275,6 +280,7 @@ export async function chat(
   // Save assistant message
   const savedMessage = await prisma.message.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId,
       role: "assistant",
       content: response,
@@ -425,6 +431,7 @@ export async function createNewConversation(
 
   return prisma.conversation.create({
     data: {
+      companyId: currentCompanyId(),
       channel,
       customerName,
       customerContact,

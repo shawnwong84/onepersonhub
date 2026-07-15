@@ -1,6 +1,8 @@
 import { ToolDefinition } from "./types";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import nodemailer from "nodemailer";
+import { Prisma } from "@/generated/prisma/client";
 
 export const owlyTools: ToolDefinition[] = [
   {
@@ -136,6 +138,24 @@ export const owlyTools: ToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "find_business_record",
+      description:
+        "Look up a business record (order, ticket, invoice, lead, etc.) by its ID, order/reference number, or title, across all installed business modules. Use this whenever a customer references a specific order number or record so you can answer with its real status instead of guessing.",
+      parameters: {
+        type: "object",
+        properties: {
+          search: {
+            type: "string",
+            description: "The order number, record ID, or title text the customer gave you.",
+          },
+        },
+        required: ["search"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "trigger_webhook",
       description:
         "Trigger a configured webhook to notify an external system about an event.",
@@ -171,6 +191,8 @@ export async function executeToolCall(
       return await sendInternalEmail(args);
     case "get_customer_history":
       return await getCustomerHistory(args);
+    case "find_business_record":
+      return await findBusinessRecord(args);
     case "schedule_followup":
       return await scheduleFollowup(args);
     case "trigger_webhook":
@@ -194,6 +216,7 @@ async function createTicket(
 
   const ticket = await prisma.ticket.create({
     data: {
+      companyId: currentCompanyId(),
       title: args.title as string,
       description: args.description as string,
       priority: (args.priority as string) || "medium",
@@ -316,6 +339,64 @@ async function getCustomerHistory(
   }));
 
   return JSON.stringify({ success: true, history });
+}
+
+async function findBusinessRecord(
+  args: Record<string, unknown>
+): Promise<string> {
+  const search = (args.search as string || "").trim();
+  if (!search) {
+    return JSON.stringify({ success: false, message: "No search value was given." });
+  }
+
+  let record = await prisma.moduleRecord.findFirst({
+    where: {
+      OR: [
+        { id: search },
+        { title: { contains: search, mode: Prisma.QueryMode.insensitive } },
+        { sourceMessage: { contains: search, mode: Prisma.QueryMode.insensitive } },
+      ],
+    },
+    include: { module: { select: { name: true } } },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  // Fallback: a customer name or other detail is often only present inside
+  // the record's module-specific `data` JSON (e.g. Orders' "Customer"
+  // field), not in title/sourceMessage. Filtered in application code, not
+  // raw SQL, so it stays inside the tenant-scoping Prisma extension - see
+  // the matching comment in src/lib/reporter-chat.ts.
+  if (!record) {
+    const searchLower = search.toLowerCase();
+    const candidates = await prisma.moduleRecord.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 300,
+      include: { module: { select: { name: true } } },
+    });
+    record = candidates.find((candidate) =>
+      JSON.stringify(candidate.data ?? {}).toLowerCase().includes(searchLower)
+    ) || null;
+  }
+
+  if (!record) {
+    return JSON.stringify({
+      success: true,
+      found: false,
+      message: `No record matched "${search}". Do not guess a status - tell the customer you couldn't find it and offer to escalate.`,
+    });
+  }
+
+  return JSON.stringify({
+    success: true,
+    found: true,
+    module: record.module.name,
+    recordType: record.recordType,
+    title: record.title,
+    status: record.status,
+    priority: record.priority,
+    data: record.data,
+    updatedAt: record.updatedAt,
+  });
 }
 
 async function scheduleFollowup(

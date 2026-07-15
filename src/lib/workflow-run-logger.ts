@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 
 type RunStatus =
@@ -48,6 +49,7 @@ export async function startWorkflowRun(input: StartRunInput) {
   try {
     return await prisma.workflowRun.create({
       data: {
+        companyId: currentCompanyId(),
         flowId: input.flowId || undefined,
         flowName: input.flowName || "",
         conversationId: input.conversationId || undefined,
@@ -73,6 +75,7 @@ export async function recordWorkflowRunStep(
   try {
     return await prisma.workflowRunStep.create({
       data: {
+        companyId: currentCompanyId(),
         runId,
         nodeId: input.nodeId || "",
         nodeLabel: input.nodeLabel || "",

@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { prisma } from "@/lib/prisma";
+import { prismaUnscoped } from "@/lib/prisma";
 import { cookies } from "next/headers";
 
 function getJwtSecret(): string {
@@ -41,6 +41,7 @@ export type UserType = "owner" | "member";
 
 export interface TokenPayload {
   userId: string;
+  companyId: string;
   role: string;
   userType: UserType;
   tokenVersion: number;
@@ -48,11 +49,12 @@ export interface TokenPayload {
 
 export function generateToken(
   userId: string,
+  companyId: string,
   role: string,
   userType: UserType = "owner",
   tokenVersion = 0
 ): string {
-  return jwt.sign({ userId, role, userType, tokenVersion }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY_SECONDS });
+  return jwt.sign({ userId, companyId, role, userType, tokenVersion }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY_SECONDS });
 }
 
 export function verifyToken(token: string): TokenPayload | null {
@@ -73,16 +75,21 @@ export async function getCurrentUser() {
   const payload = verifyToken(token);
   if (!payload) return null;
 
+  // Not tenant-scoped: we don't know the company until we resolve this
+  // token's own userId, and the row itself carries companyId - this is
+  // exactly the bootstrap lookup prismaUnscoped exists for.
   if (payload.userType === "member") {
-    const member = await prisma.teamMember.findUnique({
+    const member = await prismaUnscoped.teamMember.findUnique({
       where: { id: payload.userId },
-      select: { id: true, username: true, name: true, rbacRole: true, isActive: true, tokenVersion: true },
+      select: { id: true, companyId: true, username: true, name: true, rbacRole: true, isActive: true, tokenVersion: true },
     });
     if (!member || !member.isActive || !member.username) return null;
     if (member.tokenVersion !== payload.tokenVersion) return null; // password changed since this session was issued
+    if (member.companyId !== payload.companyId) return null; // moved company / stale token
 
     return {
       id: member.id,
+      companyId: member.companyId,
       username: member.username,
       name: member.name,
       role: member.rbacRole,
@@ -90,25 +97,22 @@ export async function getCurrentUser() {
     };
   }
 
-  const admin = await prisma.admin.findUnique({
+  const admin = await prismaUnscoped.admin.findUnique({
     where: { id: payload.userId },
-    select: { id: true, username: true, name: true, role: true, tokenVersion: true },
+    select: { id: true, companyId: true, username: true, name: true, role: true, tokenVersion: true },
   });
   if (!admin) return null;
   if (admin.tokenVersion !== payload.tokenVersion) return null; // password changed since this session was issued
+  if (admin.companyId !== payload.companyId) return null; // moved company / stale token
 
   return {
     id: admin.id,
+    companyId: admin.companyId,
     username: admin.username,
     name: admin.name,
     role: admin.role,
     userType: "owner" as UserType,
   };
-}
-
-export async function isSetupComplete(): Promise<boolean> {
-  const adminCount = await prisma.admin.count();
-  return adminCount > 0;
 }
 
 export function setAuthCookie(token: string) {

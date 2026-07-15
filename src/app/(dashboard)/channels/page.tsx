@@ -1,7 +1,6 @@
 "use client";
 
 import { Header } from "@/components/layout/header";
-import { ChannelAccountsSection } from "@/components/channels/channel-accounts";
 import {
   MessageCircle,
   Mail,
@@ -94,28 +93,34 @@ function StatusBadge({ status }: { status: string }) {
 function Toggle({
   enabled,
   onChange,
+  label = "Automation",
 }: {
   enabled: boolean;
   onChange: (v: boolean) => void;
+  label?: string;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      onClick={() => onChange(!enabled)}
-      className={cn(
-        "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-owly-primary/30 focus:ring-offset-2",
-        enabled ? "bg-owly-primary" : "bg-owly-border"
-      )}
-    >
-      <span
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={`${label}: ${enabled ? "on" : "off"}. Turn off to stop workflows and AI replies for this channel, even if an account is connected.`}
+        title={enabled ? "Automation is on: workflows and AI replies run for this channel." : "Automation is off: incoming messages are saved only, no workflow or AI reply runs."}
+        onClick={() => onChange(!enabled)}
         className={cn(
-          "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-          enabled ? "translate-x-5" : "translate-x-0"
+          "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-owly-primary/30 focus:ring-offset-2",
+          enabled ? "bg-owly-primary" : "bg-owly-border"
         )}
-      />
-    </button>
+      >
+        <span
+          className={cn(
+            "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+            enabled ? "translate-x-5" : "translate-x-0"
+          )}
+        />
+      </button>
+    </div>
   );
 }
 
@@ -1127,7 +1132,6 @@ export default function ChannelsPage() {
                 saving={saving}
               />
             </div>
-            <ChannelAccountsSection />
           </>
         )}
       </div>

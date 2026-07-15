@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import { CORE_MODULE_SLUGS, findMarketplaceModule } from "@/lib/marketplace/catalog";
 
 export async function getInstalledModule(slug: string) {
@@ -6,12 +7,15 @@ export async function getInstalledModule(slug: string) {
   if (!catalog) return null;
 
   const isCore = CORE_MODULE_SLUGS.includes(slug);
-  let moduleState = await prisma.businessModule.findUnique({ where: { slug } });
+  const companyId = currentCompanyId();
+  let moduleState = await prisma.businessModule.findUnique({
+    where: { companyId_slug: { companyId, slug } },
+  });
 
   // Core modules ship installed; heal any legacy row that says otherwise.
   if (moduleState && isCore && (!moduleState.isInstalled || !moduleState.isEnabled)) {
     moduleState = await prisma.businessModule.update({
-      where: { slug },
+      where: { companyId_slug: { companyId, slug } },
       data: { isInstalled: true, isEnabled: true, disabledAt: null },
     });
   }
@@ -19,6 +23,7 @@ export async function getInstalledModule(slug: string) {
   if (!moduleState && (catalog.isInstalled || isCore)) {
     moduleState = await prisma.businessModule.create({
       data: {
+        companyId,
         slug,
         name: catalog.name,
         category: catalog.category,

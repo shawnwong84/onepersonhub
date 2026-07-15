@@ -1,12 +1,14 @@
+import type { Metadata } from "next";
 import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { LineChart, DonutChart, BarChart } from "@/components/ui/chart";
 import { OnboardingChecklist } from "@/components/ui/onboarding-checklist";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { setCurrentCompany } from "@/lib/tenant-context";
 import { isUnscoped, conversationScope, ticketScope, type ScopedUser } from "@/lib/rbac-scope";
+import { LandingPage } from "@/components/marketing/landing-page";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import {
   MessageSquare,
   Ticket,
@@ -18,6 +20,23 @@ import {
 } from "lucide-react";
 import { formatRelativeTime, getChannelLabel, getStatusColor } from "@/lib/utils";
 import { getChannelHex, getPriorityHex } from "@/lib/status-colors";
+
+// This route is dual-purpose: anonymous visitors get the marketing landing
+// page (see below), authenticated users get the dashboard. This metadata
+// only matters for the anonymous/landing case - authenticated pages aren't
+// meant to be indexed or shared anyway.
+export const metadata: Metadata = {
+  title: "Paperhuman - AI Customer Care & Business Automation",
+  description:
+    "Turn WhatsApp, email, and phone messages into AI replies, visual workflows, and business records, with a Reporter Agent that watches for what needs attention.",
+  openGraph: {
+    title: "Paperhuman - AI Customer Care & Business Automation",
+    description:
+      "Turn WhatsApp, email, and phone messages into AI replies, visual workflows, and business records.",
+    url: "/",
+    type: "website",
+  },
+};
 
 const TREND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const CHART_WINDOW_DAYS = 14;
@@ -247,10 +266,17 @@ function previewMessage(content: string, channel: string, maxLength = 96) {
 
 export default async function DashboardPage() {
   const currentUser = await getCurrentUser();
-  if (!currentUser) redirect("/login");
+  if (!currentUser) return <LandingPage />;
+
+  // Server Component pages can render independently of their layout (Next.js
+  // does not guarantee the layout's setCurrentCompany() side effect runs
+  // first), so this page re-affirms its own tenant context rather than
+  // relying solely on (dashboard)/layout.tsx having set it.
+  setCurrentCompany(currentUser.companyId);
 
   const scopedUser: ScopedUser = {
     userId: currentUser.id,
+    companyId: currentUser.companyId,
     role: currentUser.role,
     userType: currentUser.userType,
   };

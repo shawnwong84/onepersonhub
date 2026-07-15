@@ -69,7 +69,9 @@ export async function POST(request: NextRequest) {
     const deniedWrite = await requireModuleAccess(auth, moduleSlug, "write");
     if (deniedWrite) return deniedWrite;
 
-    const moduleState = await prisma.businessModule.findUnique({ where: { slug: moduleSlug } });
+    const moduleState = await prisma.businessModule.findUnique({
+      where: { companyId_slug: { companyId: auth.companyId, slug: moduleSlug } },
+    });
     if (!moduleState?.isInstalled) {
       return NextResponse.json({ error: "Module not installed" }, { status: 404 });
     }
@@ -92,6 +94,7 @@ export async function POST(request: NextRequest) {
 
     const signal = await prisma.moduleSignal.create({
       data: {
+        companyId: auth.companyId,
         moduleId: moduleState.id,
         moduleRecordId: typeof body.moduleRecordId === "string" ? body.moduleRecordId : null,
         signalType,

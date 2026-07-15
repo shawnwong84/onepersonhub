@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
 
     const member = await prisma.teamMember.create({
       data: {
+        companyId: auth.companyId,
         name: name.trim(),
         email: email.trim(),
         phone: phone?.trim() || "",

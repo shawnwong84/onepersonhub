@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import { findMarketplaceModule } from "@/lib/marketplace/catalog";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 import { createNotification } from "@/lib/notifications";
@@ -29,6 +30,7 @@ interface ReporterConfig {
   requireApprovalBeforeExternalNotifications: boolean;
   staleApprovalMinutes: number;
   unansweredConversationMinutes: number;
+  staleTicketHours: number;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -39,6 +41,64 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function severityRank(severity: string) {
   return { critical: 5, urgent: 4, high: 3, medium: 2, low: 1 }[severity] || 1;
+}
+
+/** Human-friendly "how long ago", e.g. "3 days", "5 hours" - used in place
+ * of raw ISO timestamps so report text reads naturally. */
+function formatDuration(since: Date): string {
+  const ms = Date.now() - since.getTime();
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+/** Builds a report/alert title out of the actual attention items instead of
+ * a bare count, e.g. "Widget A is out of stock; Password Reset Request
+ * ticket hasn't been closed, +2 more" - so the title itself says what's
+ * wrong, not just how many things are wrong. */
+function summarizeTitles(items: AttentionItem[], limit = 3): string {
+  if (items.length === 0) return "No open items";
+  const uniqueTitles = Array.from(new Set(items.map((item) => item.title)));
+  const shown = uniqueTitles.slice(0, limit);
+  const remainder = items.length - shown.length;
+  return remainder > 0 ? `${shown.join("; ")}, +${remainder} more` : shown.join("; ");
+}
+
+const ATTENTION_TYPE_LABELS: Record<string, string> = {
+  inventory_low_stock: "low on stock",
+  low_stock_pending_order_match: "order at risk from low stock",
+  supplier_delay: "supplier delay",
+  finance_overdue: "overdue finance record",
+  stale_workflow_approval: "workflow approval waiting",
+  failed_workflow: "failed workflow",
+  unanswered_conversation: "unanswered conversation",
+  stale_ticket: "ticket not yet closed",
+  aging_module_record: "aging record",
+};
+
+/** Plain-English paragraph for the record's "Summary" field - the generic
+ * module-record UI only renders string/number/date/textarea/select fields
+ * (see workspace-config.ts), so structured breakdowns need to already be
+ * text by the time they reach `data`, not an object the UI can't display. */
+function buildSummaryText(items: AttentionItem[]): string {
+  if (items.length === 0) return "No open items - everything looks fine.";
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(item.type, (counts.get(item.type) || 0) + 1);
+  const breakdown = Array.from(counts.entries())
+    .map(([type, count]) => `${count} ${ATTENTION_TYPE_LABELS[type] || type.replace(/_/g, " ")}`)
+    .join(", ");
+  return `${items.length} item${items.length === 1 ? "" : "s"} need attention: ${breakdown}.`;
+}
+
+/** Renders recommended actions as a readable numbered list for the
+ * "Recommended actions" textarea - the raw structured array is kept
+ * alongside under a separate key for anything that wants to consume it
+ * programmatically. */
+function formatRecommendedActionsText(actions: Array<{ title: string; recommendation: string }>): string {
+  return actions.map((action, index) => `${index + 1}. ${action.title}\n   -> ${action.recommendation}`).join("\n\n");
 }
 
 function normalizeConfig(value: unknown): ReporterConfig {
@@ -72,6 +132,9 @@ function normalizeConfig(value: unknown): ReporterConfig {
     unansweredConversationMinutes: Number.isFinite(config.unansweredConversationMinutes)
       ? Math.max(5, Number(config.unansweredConversationMinutes))
       : 30,
+    staleTicketHours: Number.isFinite(config.staleTicketHours)
+      ? Math.max(1, Number(config.staleTicketHours))
+      : 24,
   };
 }
 
@@ -88,6 +151,7 @@ function enabledModuleWhere(config: ReporterConfig): Prisma.BusinessModuleWhereI
 
 function summarizeSignal(signal: {
   id: string;
+  signalType: string;
   title: string;
   severity: string;
   description: string;
@@ -98,7 +162,11 @@ function summarizeSignal(signal: {
     ? ` Linked record: ${signal.moduleRecord.title} (${signal.moduleRecord.status}).`
     : "";
   return {
-    type: "module_signal",
+    // Reuses the original detection type (e.g. "inventory_low_stock") rather
+    // than a generic "module_signal" bucket, so this signal correctly
+    // dedupes against a freshly re-detected item for the same record
+    // instead of showing the same issue twice with two different titles.
+    type: signal.signalType || "module_signal",
     title: signal.title,
     description: `${signal.description || ""}${recordText}`.trim(),
     severity: signal.severity,
@@ -108,6 +176,28 @@ function summarizeSignal(signal: {
     signalId: signal.id,
     conversationId: signal.moduleRecord?.conversationId || null,
   };
+}
+
+/** Same underlying record + detection type showing up twice (once as a
+ * previously-persisted signal, once as freshly re-detected) reads as two
+ * different problems when it's one - keep the freshest wording. */
+function dedupeItems(items: AttentionItem[]): AttentionItem[] {
+  const seen = new Map<string, AttentionItem>();
+  const unkeyed: AttentionItem[] = [];
+  for (const item of items) {
+    if (!item.moduleRecordId) {
+      unkeyed.push(item);
+      continue;
+    }
+    const key = `${item.moduleRecordId}:${item.type}`;
+    const existing = seen.get(key);
+    // Prefer the freshly-detected item (no signalId) over the persisted
+    // signal's possibly-stale wording; otherwise keep the first seen.
+    if (!existing || (existing.signalId && !item.signalId)) {
+      seen.set(key, item);
+    }
+  }
+  return [...seen.values(), ...unkeyed];
 }
 
 function stringifyItem(item: AttentionItem) {
@@ -163,16 +253,25 @@ async function collectInventoryAndOrderRisks(config: ReporterConfig): Promise<At
     );
   });
 
-  const items: AttentionItem[] = lowStock.map((record) => ({
-    type: "inventory_low_stock",
-    title: `Low stock: ${record.title}`,
-    description: "Inventory record is low or marked for Reporter attention.",
-    severity: record.priority === "urgent" ? "urgent" : "high",
-    moduleSlug: record.module.slug,
-    moduleName: record.module.name,
-    moduleRecordId: record.id,
-    conversationId: record.conversationId,
-  }));
+  const items: AttentionItem[] = lowStock.map((record) => {
+    const data = asRecord(record.data);
+    const stock = numericValue(data.stockLevel ?? data.stock ?? data.quantity ?? data.available);
+    const reorder = numericValue(data.reorderPoint ?? data.minStock ?? data.minimumStock);
+    const stockText = stock !== null ? (stock <= 0 ? "has no stock left" : `has only ${stock} left in stock`) : "is low on stock";
+    return {
+      type: "inventory_low_stock",
+      title: `${record.title} ${stockText}`,
+      description:
+        stock !== null && reorder !== null
+          ? `${stock} in stock, reorder point is ${reorder}.`
+          : "Marked for Reporter attention.",
+      severity: record.priority === "urgent" || (stock !== null && stock <= 0) ? "urgent" : "high",
+      moduleSlug: record.module.slug,
+      moduleName: record.module.name,
+      moduleRecordId: record.id,
+      conversationId: record.conversationId,
+    };
+  });
 
   for (const stockRecord of lowStock) {
     const stockData = asRecord(stockRecord.data);
@@ -195,8 +294,8 @@ async function collectInventoryAndOrderRisks(config: ReporterConfig): Promise<At
       if (orderProducts.some((product) => [...products].some((stockProduct) => product.includes(stockProduct) || stockProduct.includes(product)))) {
         items.push({
           type: "low_stock_pending_order_match",
-          title: `Low stock may affect order: ${order.title}`,
-          description: `${stockRecord.title} is low and appears in an open order.`,
+          title: `${order.title} may not be fulfilled - ${stockRecord.title} is low on stock`,
+          description: `This open order needs ${stockRecord.title}, which is low or out of stock.`,
           severity: "critical",
           moduleSlug: "orders",
           moduleName: "Orders",
@@ -239,7 +338,7 @@ async function collectModuleRisks(config: ReporterConfig): Promise<AttentionItem
   return [
     ...supplierDelays.map((record) => ({
       type: "supplier_delay",
-      title: `Supplier issue: ${record.title}`,
+      title: `${record.title} is delayed with the supplier`,
       description: "Supplier/procurement record is delayed or marked high priority.",
       severity: record.priority === "urgent" ? "urgent" : "high",
       moduleSlug: record.module.slug,
@@ -255,8 +354,8 @@ async function collectModuleRisks(config: ReporterConfig): Promise<AttentionItem
       })
       .map((record) => ({
         type: "finance_overdue",
-        title: `Finance risk: ${record.title}`,
-        description: "Finance record is overdue or past due date.",
+        title: `${record.title} payment is overdue`,
+        description: "Finance record is overdue or past its due date.",
         severity: "high",
         moduleSlug: record.module.slug,
         moduleName: record.module.name,
@@ -269,8 +368,9 @@ async function collectModuleRisks(config: ReporterConfig): Promise<AttentionItem
 async function collectOperationalRisks(config: ReporterConfig): Promise<AttentionItem[]> {
   const staleApprovalBefore = new Date(Date.now() - config.staleApprovalMinutes * 60 * 1000);
   const unansweredBefore = new Date(Date.now() - config.unansweredConversationMinutes * 60 * 1000);
+  const staleTicketBefore = new Date(Date.now() - config.staleTicketHours * 60 * 60 * 1000);
 
-  const [stalledApprovals, failedRuns, unansweredConversations] = await Promise.all([
+  const [stalledApprovals, failedRuns, unansweredConversations, staleTickets] = await Promise.all([
     prisma.workflowRun.findMany({
       where: {
         status: "waiting_approval",
@@ -299,21 +399,33 @@ async function collectOperationalRisks(config: ReporterConfig): Promise<Attentio
       },
       take: 50,
     }),
+    // Real support tickets, not module records - Customer Care's own model.
+    // Not tied to a BusinessModule, so these items skip the module-signal
+    // persistence step below (no moduleSlug to resolve a moduleId from).
+    prisma.ticket.findMany({
+      where: {
+        status: { notIn: ["resolved", "closed"] },
+        updatedAt: { lt: staleTicketBefore },
+      },
+      orderBy: { updatedAt: "asc" },
+      take: 50,
+      select: { id: true, title: true, status: true, priority: true, updatedAt: true, conversationId: true },
+    }),
   ]);
 
   return [
     ...stalledApprovals.map((run) => ({
       type: "stale_workflow_approval",
-      title: `Approval waiting: ${run.flowName || "Workflow"}`,
-      description: `Workflow has waited for approval since ${run.updatedAt.toISOString()}.`,
+      title: `${run.flowName || "A workflow"} approval has been waiting ${formatDuration(run.updatedAt)}`,
+      description: "Approve, reject, or reassign this workflow so it can continue.",
       severity: "high",
       conversationId: run.conversationId,
       sourceId: run.id,
     })),
     ...failedRuns.map((run) => ({
       type: "failed_workflow",
-      title: `Failed workflow: ${run.flowName || "Workflow"}`,
-      description: run.reason || `Workflow failed at ${run.updatedAt.toISOString()}.`,
+      title: `${run.flowName || "A workflow"} failed to run`,
+      description: run.reason || `Failed ${formatDuration(run.updatedAt)} ago.`,
       severity: "high",
       conversationId: run.conversationId,
       sourceId: run.id,
@@ -322,12 +434,20 @@ async function collectOperationalRisks(config: ReporterConfig): Promise<Attentio
       .filter((conversation) => conversation.messages[0]?.role === "customer")
       .map((conversation) => ({
         type: "unanswered_conversation",
-        title: `Unanswered conversation: ${conversation.customerName}`,
-        description: `${conversation.channel} conversation has a latest customer message and no recent reply.`,
+        title: `${conversation.customerName} hasn't received a reply yet`,
+        description: `${conversation.channel} conversation has been waiting ${formatDuration(conversation.updatedAt)}.`,
         severity: conversation.status === "escalated" ? "high" : "medium",
         conversationId: conversation.id,
         sourceId: conversation.id,
       })),
+    ...staleTickets.map((ticket) => ({
+      type: "stale_ticket",
+      title: `${ticket.title} ticket hasn't been closed`,
+      description: `Open ${formatDuration(ticket.updatedAt)}, still "${ticket.status.replace("_", " ")}".`,
+      severity: ticket.priority === "urgent" ? "urgent" : ticket.priority === "high" ? "high" : "medium",
+      conversationId: ticket.conversationId,
+      sourceId: ticket.id,
+    })),
   ];
 }
 
@@ -351,6 +471,7 @@ async function createReporterRecord(
 ) {
   return prisma.moduleRecord.create({
     data: {
+      companyId: currentCompanyId(),
       moduleId: reporterModuleId,
       recordType,
       title,
@@ -367,6 +488,7 @@ async function createReporterRecord(
       updatedBy: actorName,
       events: {
         create: {
+          companyId: currentCompanyId(),
           action: `${recordType}_generated`,
           description: `Reporter Agent generated ${recordType}.`,
           createdBy: actorName,
@@ -380,8 +502,9 @@ async function createReporterRecord(
 export async function runReporterAgentScan(actorName = "Reporter Agent") {
   const reporterCatalog = findMarketplaceModule("reporter-agent");
   const reporter = await prisma.businessModule.upsert({
-    where: { slug: "reporter-agent" },
+    where: { companyId_slug: { companyId: currentCompanyId(), slug: "reporter-agent" } },
     create: {
+      companyId: currentCompanyId(),
       slug: "reporter-agent",
       name: reporterCatalog?.name || "Reporter Agent",
       category: reporterCatalog?.category || "Monitoring and reporting",
@@ -452,8 +575,8 @@ export async function runReporterAgentScan(actorName = "Reporter Agent") {
   const signalItems = signals.map(summarizeSignal);
   const agingItems: AttentionItem[] = agingRecords.map((record) => ({
     type: "aging_module_record",
-    title: `Aging record: ${record.title}`,
-    description: `${record.module.name} record has been ${record.status} since ${record.updatedAt.toISOString()}.`,
+    title: `${record.title} has been ${record.status} for ${formatDuration(record.updatedAt)}`,
+    description: `${record.module.name} record, no update in ${formatDuration(record.updatedAt)}.`,
     severity: record.priority === "urgent" ? "urgent" : record.priority === "high" ? "high" : "medium",
     moduleSlug: record.module.slug,
     moduleName: record.module.name,
@@ -461,13 +584,13 @@ export async function runReporterAgentScan(actorName = "Reporter Agent") {
     conversationId: record.conversationId,
   }));
 
-  const items = [
+  const items = dedupeItems([
     ...signalItems,
     ...agingItems,
     ...inventoryOrderRisks,
     ...moduleRisks,
     ...operationalRisks,
-  ]
+  ])
     .filter((item) => severityRank(item.severity) >= minSeverity)
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
 
@@ -492,11 +615,23 @@ export async function runReporterAgentScan(actorName = "Reporter Agent") {
           status: { not: "resolved" },
           ...(item.moduleRecordId ? { moduleRecordId: item.moduleRecordId } : { title: item.title }),
         },
-        select: { id: true },
+        select: { id: true, title: true, description: true },
       });
-      if (existing) continue;
+      if (existing) {
+        // Refresh stale wording from an earlier scan (e.g. before a title
+        // format change, or the underlying numbers moved) so it doesn't
+        // keep showing outdated text forever until manually resolved.
+        if (existing.title !== item.title || existing.description !== (item.description || "")) {
+          await prisma.moduleSignal.update({
+            where: { id: existing.id },
+            data: { title: item.title, description: item.description || "", severity: item.severity },
+          });
+        }
+        continue;
+      }
       await prisma.moduleSignal.create({
         data: {
+          companyId: currentCompanyId(),
           moduleId,
           moduleRecordId: item.moduleRecordId || null,
           signalType: item.type,
@@ -518,11 +653,23 @@ export async function runReporterAgentScan(actorName = "Reporter Agent") {
     recommendation:
       item.type === "low_stock_pending_order_match"
         ? "Review stock availability before confirming the related order."
-        : item.type === "stale_workflow_approval"
-          ? "Approve, reject, or reassign the pending workflow approval."
-          : item.type === "unanswered_conversation"
-            ? "Open the conversation and send a manual reply or resume automation."
-            : `Review ${item.title}.`,
+        : item.type === "inventory_low_stock"
+          ? "Reorder stock or update the reorder point if this is expected."
+          : item.type === "stale_workflow_approval"
+            ? "Approve, reject, or reassign the pending workflow approval."
+            : item.type === "unanswered_conversation"
+              ? "Open the conversation and send a manual reply or resume automation."
+              : item.type === "stale_ticket"
+                ? "Follow up with the customer and close or update the ticket."
+                : item.type === "finance_overdue"
+                  ? "Chase payment or update the due date if it has already been settled."
+                  : item.type === "supplier_delay"
+                    ? "Follow up with the supplier for an updated delivery date."
+                    : item.type === "failed_workflow"
+                      ? "Check the workflow run's error and retry or fix the underlying trigger."
+                      : item.type === "aging_module_record"
+                        ? "Update the record's status or close it out if it's no longer active."
+                        : `Review ${item.title}.`,
     sourceId: item.moduleRecordId || item.signalId || item.sourceId || null,
     conversationId: item.conversationId || null,
   }));
@@ -530,20 +677,20 @@ export async function runReporterAgentScan(actorName = "Reporter Agent") {
   const report = await createReporterRecord(
     reporter.id,
     "report",
-    items.length
-      ? `Reporter Agent attention report: ${items.length} item${items.length === 1 ? "" : "s"}`
-      : "Reporter Agent attention report: no open items",
+    items.length ? summarizeTitles(items) : "No open items - everything looks fine",
     items.length ? "open" : "resolved",
     criticalCount > 0 ? "high" : items.length ? "normal" : "low",
     ({
       generatedAt: new Date().toISOString(),
       outputType,
+      summary: buildSummaryText(items),
       config,
       openSignalCount: signals.length,
       agingRecordCount: agingRecords.length,
       operationalRiskCount: operationalRisks.length,
       items,
-      recommendedActions,
+      recommendedActions: formatRecommendedActionsText(recommendedActions),
+      recommendedActionsRaw: recommendedActions,
     } as unknown) as Prisma.InputJsonObject,
     actorName
   );
@@ -553,16 +700,18 @@ export async function runReporterAgentScan(actorName = "Reporter Agent") {
   let resolvedSignalRecord = null;
 
   if (items.some((item) => severityRank(item.severity) >= severityRank("high"))) {
+    const highItems = items.filter((item) => severityRank(item.severity) >= severityRank("high"));
     alert = await createReporterRecord(
       reporter.id,
       "alert",
-      `Reporter Agent alert: ${criticalCount} high-priority item${criticalCount === 1 ? "" : "s"}`,
+      summarizeTitles(highItems),
       "open",
       "high",
       ({
         reportId: report.id,
         outputType,
-        items: items.filter((item) => severityRank(item.severity) >= severityRank("high")),
+        summary: buildSummaryText(highItems),
+        items: highItems,
         externalNotificationRequiresApproval:
           config.requireApprovalBeforeExternalNotifications &&
           config.notificationChannels.some((channel) => channel !== "in_app"),
@@ -572,15 +721,19 @@ export async function runReporterAgentScan(actorName = "Reporter Agent") {
   }
 
   if (recommendedActions.length > 0) {
+    const shownActions = recommendedActions.slice(0, 3).map((action) => action.title);
+    const actionRemainder = recommendedActions.length - shownActions.length;
     recommendation = await createReporterRecord(
       reporter.id,
       "recommendation",
-      `Reporter Agent recommended actions: ${recommendedActions.length}`,
+      `Recommended: ${shownActions.join("; ")}${actionRemainder > 0 ? `, +${actionRemainder} more` : ""}`,
       "open",
       criticalCount > 0 ? "high" : "normal",
       {
         reportId: report.id,
-        recommendedActions,
+        summary: `${recommendedActions.length} recommended action${recommendedActions.length === 1 ? "" : "s"} from this scan.`,
+        recommendedActions: formatRecommendedActionsText(recommendedActions),
+        recommendedActionsRaw: recommendedActions,
       } as Prisma.InputJsonObject,
       actorName
     );
@@ -590,10 +743,11 @@ export async function runReporterAgentScan(actorName = "Reporter Agent") {
     resolvedSignalRecord = await createReporterRecord(
       reporter.id,
       "resolved_signal",
-      `Reporter Agent resolved signals: ${resolvedSignals.length}`,
+      `Resolved: ${resolvedSignals.map((s) => s.title).slice(0, 3).join("; ")}${resolvedSignals.length > 3 ? `, +${resolvedSignals.length - 3} more` : ""}`,
       "resolved",
       "low",
       {
+        summary: `${resolvedSignals.length} signal${resolvedSignals.length === 1 ? "" : "s"} resolved: ${resolvedSignals.map((s) => s.title).join("; ")}`,
         resolvedSignals: resolvedSignals.map((signal) => ({
           id: signal.id,
           title: signal.title,

@@ -1,11 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import { hasPermission, Permission } from "@/lib/rbac";
-import { prisma } from "@/lib/prisma";
+import { prismaUnscoped } from "@/lib/prisma";
 import { setLogContext } from "@/lib/log-context";
+import { setCurrentCompany } from "@/lib/tenant-context";
+import { getBillingAccount, isBillingLocked } from "@/lib/billing/status";
+
+// requireAuth runs in the Node.js runtime (API route handlers), unlike
+// middleware.ts (still the pre-"Proxy" Edge-runtime file convention, which
+// cannot load Prisma) - so the app-wide billing gate lives here instead.
+const BILLING_EXEMPT_API_PATHS = ["/api/billing", "/api/auth", "/api/health", "/api/register"];
+
+async function checkBillingLock(request: NextRequest, companyId: string): Promise<NextResponse | null> {
+  const pathname = request.nextUrl.pathname;
+  if (BILLING_EXEMPT_API_PATHS.some((p) => pathname.startsWith(p))) return null;
+
+  const account = await getBillingAccount(companyId);
+  if (!isBillingLocked(account)) return null;
+
+  return NextResponse.json(
+    { error: { code: "BILLING_LOCKED", message: "A subscription is required to continue. Visit /billing." } },
+    { status: 402 }
+  );
+}
 
 interface AuthContext {
   userId: string;
+  companyId: string;
   role: string;
   username: string;
   name: string;
@@ -14,24 +35,26 @@ interface AuthContext {
 }
 
 /**
- * Authenticate via API key (X-API-Key header).
+ * Authenticate via API key (X-API-Key header). Not tenant-scoped - the key
+ * itself is the only thing that tells us which company this is.
  */
 async function authenticateApiKey(apiKey: string): Promise<AuthContext | null> {
-  const key = await prisma.apiKey.findUnique({
+  const key = await prismaUnscoped.apiKey.findUnique({
     where: { key: apiKey },
   });
 
   if (!key || !key.isActive) return null;
 
   // Update lastUsed timestamp
-  prisma.apiKey.update({
+  prismaUnscoped.apiKey.update({
     where: { id: key.id },
     data: { lastUsed: new Date() },
   }).catch(() => { /* fire and forget */ });
 
-  // API keys get admin-level access
+  // API keys get admin-level access within their own company
   return {
     userId: "api-key:" + key.id,
+    companyId: key.companyId,
     role: "admin",
     username: key.name,
     name: key.name,
@@ -66,7 +89,12 @@ export async function requireAuth(
       );
     }
 
-    if (permission && !(await hasPermission(context.role, permission))) {
+    setCurrentCompany(context.companyId);
+
+    const billingLock = await checkBillingLock(request, context.companyId);
+    if (billingLock) return billingLock;
+
+    if (permission && !(await hasPermission(context.companyId, context.role, permission))) {
       return NextResponse.json(
         { error: { code: "FORBIDDEN", message: "Insufficient permissions" } },
         { status: 403 }
@@ -95,9 +123,10 @@ export async function requireAuth(
   }
 
   if (payload.userType === "member") {
-    const member = await prisma.teamMember.findUnique({
+    // Not tenant-scoped: this IS the lookup that resolves companyId.
+    const member = await prismaUnscoped.teamMember.findUnique({
       where: { id: payload.userId },
-      select: { id: true, username: true, name: true, rbacRole: true, isActive: true, tokenVersion: true },
+      select: { id: true, companyId: true, username: true, name: true, rbacRole: true, isActive: true, tokenVersion: true },
     });
 
     // Deactivation must invalidate existing sessions immediately.
@@ -116,9 +145,20 @@ export async function requireAuth(
         { status: 401 }
       );
     }
+    if (member.companyId !== payload.companyId) {
+      return NextResponse.json(
+        { error: { code: "SESSION_INVALIDATED", message: "Your session has been invalidated. Please log in again." } },
+        { status: 401 }
+      );
+    }
+
+    setCurrentCompany(member.companyId);
+
+    const billingLock = await checkBillingLock(request, member.companyId);
+    if (billingLock) return billingLock;
 
     // Check against the live role so role changes apply without re-login.
-    if (permission && !(await hasPermission(member.rbacRole, permission))) {
+    if (permission && !(await hasPermission(member.companyId, member.rbacRole, permission))) {
       return NextResponse.json(
         { error: { code: "FORBIDDEN", message: "Insufficient permissions" } },
         { status: 403 }
@@ -127,6 +167,7 @@ export async function requireAuth(
 
     return {
       userId: member.id,
+      companyId: member.companyId,
       role: member.rbacRole,
       username: member.username,
       name: member.name,
@@ -135,16 +176,10 @@ export async function requireAuth(
     };
   }
 
-  if (permission && !(await hasPermission(payload.role, permission))) {
-    return NextResponse.json(
-      { error: { code: "FORBIDDEN", message: "Insufficient permissions" } },
-      { status: 403 }
-    );
-  }
-
-  const admin = await prisma.admin.findUnique({
+  // Not tenant-scoped: this IS the lookup that resolves companyId.
+  const admin = await prismaUnscoped.admin.findUnique({
     where: { id: payload.userId },
-    select: { id: true, username: true, name: true, role: true, tokenVersion: true },
+    select: { id: true, companyId: true, username: true, name: true, role: true, tokenVersion: true },
   });
 
   if (!admin) {
@@ -160,9 +195,28 @@ export async function requireAuth(
       { status: 401 }
     );
   }
+  if (admin.companyId !== payload.companyId) {
+    return NextResponse.json(
+      { error: { code: "SESSION_INVALIDATED", message: "Your session has been invalidated. Please log in again." } },
+      { status: 401 }
+    );
+  }
+
+  setCurrentCompany(admin.companyId);
+
+  const billingLock = await checkBillingLock(request, admin.companyId);
+  if (billingLock) return billingLock;
+
+  if (permission && !(await hasPermission(admin.companyId, admin.role, permission))) {
+    return NextResponse.json(
+      { error: { code: "FORBIDDEN", message: "Insufficient permissions" } },
+      { status: 403 }
+    );
+  }
 
   return {
     userId: admin.id,
+    companyId: admin.companyId,
     role: admin.role,
     username: admin.username,
     name: admin.name,
@@ -173,9 +227,19 @@ export async function requireAuth(
 
 /**
  * Type guard: check if result is an auth context (not an error response).
+ *
+ * Also re-affirms the tenant context here, in the caller's own execution
+ * (not nested inside requireAuth's returned promise) - observed empirically
+ * that a plain `enterWith()` call made inside requireAuth() does not always
+ * survive the `await requireAuth(...)` boundary in this runtime, even though
+ * requireAuth's own internal reads of the same context succeed right up to
+ * its `return`. Every route already calls `isAuthenticated(auth)` immediately
+ * after `requireAuth()`, so this needs no changes to any of the ~100 call sites.
  */
 export function isAuthenticated(
   result: AuthContext | NextResponse
 ): result is AuthContext {
-  return !(result instanceof NextResponse);
+  const ok = !(result instanceof NextResponse);
+  if (ok) setCurrentCompany((result as AuthContext).companyId);
+  return ok;
 }

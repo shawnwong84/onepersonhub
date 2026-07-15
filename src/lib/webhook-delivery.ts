@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 
 const MAX_ATTEMPTS = 3;
@@ -38,6 +39,7 @@ export async function deliverWebhook(
 
   const delivery = await prisma.webhookDelivery.create({
     data: {
+      companyId: currentCompanyId(),
       webhookId: webhook.id,
       event,
       payload: JSON.parse(payload),

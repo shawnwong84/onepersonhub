@@ -1,6 +1,7 @@
 import { Client, LocalAuth, Message } from "whatsapp-web.js";
 import qrcode from "qrcode";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnscoped } from "@/lib/prisma";
+import { setCurrentCompany } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 import { ACTIVITY_ENTITIES, logActivity } from "@/lib/activity";
 import { processIncomingMessage, type WhatsAppAccountContext } from "@/lib/channels/whatsapp";
@@ -47,13 +48,19 @@ export async function connectWhatsAppAccount(accountId: string): Promise<void> {
   if (state.initPromise) return state.initPromise;
   if (state.client && state.status === "connected") return;
 
-  const account = await prisma.channelAccount.findUnique({ where: { id: accountId } });
+  // Unscoped + explicit setCurrentCompany rather than the tenant-scoped
+  // `prisma`: this can run at boot (no request context yet) as well as from
+  // an authenticated route, and the client's "message" listener registered
+  // below needs a real, explicitly-set tenant context to inherit - not one
+  // that happens to still be active from whatever call triggered this.
+  const account = await prismaUnscoped.channelAccount.findUnique({ where: { id: accountId } });
   if (!account || account.channel !== "whatsapp") {
     throw new Error("WhatsApp channel account not found");
   }
   if (!account.isActive) {
     throw new Error("Channel account is inactive. Activate it before connecting.");
   }
+  setCurrentCompany(account.companyId);
 
   const context: WhatsAppAccountContext = { id: account.id, identifier: account.identifier };
 
@@ -164,6 +171,28 @@ export async function disconnectWhatsAppAccount(accountId: string): Promise<void
  * files aren't left mid-write) but don't need to record a deliberate
  * "disconnected" action for what's actually a server restart.
  */
+/**
+ * Starts a client for every active WhatsApp channel account, except the
+ * "default" identifier - that one is a bookkeeping row synced from the
+ * primary connection's own config, not a real per-account session (see
+ * the analogous comment on startAllEmailAccountListeners). Without this,
+ * a server restart wipes the in-memory client registry and every
+ * previously-connected account goes silently unreachable until someone
+ * reopens the Channels page and reconnects it by hand. Called once at boot.
+ */
+export async function startAllWhatsAppAccountListeners(): Promise<void> {
+  const accounts = await prismaUnscoped.channelAccount.findMany({
+    where: { channel: "whatsapp", isActive: true, identifier: { not: "default" } },
+    select: { id: true, name: true },
+  });
+
+  for (const account of accounts) {
+    await connectWhatsAppAccount(account.id).catch((error) =>
+      logger.error(`[WhatsApp:${account.name}] Failed to start account listener:`, error)
+    );
+  }
+}
+
 export async function destroyAllWhatsAppAccountClients(): Promise<void> {
   await Promise.allSettled(
     Array.from(registry.entries()).map(async ([accountId, state]) => {

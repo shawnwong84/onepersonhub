@@ -109,6 +109,7 @@ export async function POST(request: NextRequest) {
 
     const ticket = await prisma.ticket.create({
       data: {
+        companyId: auth.companyId,
         title: title.trim(),
         description: description?.trim() || "",
         priority: priority || "medium",

@@ -20,9 +20,9 @@ const NEUTRAL: ColorDef = {
 export const STATUS_COLORS: Record<string, ColorDef> = {
   active: { hex: "#22C55E", badgeClass: "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300" },
   open: { hex: "#F59E0B", badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" },
-  in_progress: { hex: "#4A7C9B", badgeClass: "bg-owly-primary-50 text-owly-primary-dark dark:bg-owly-primary-100 dark:text-owly-primary-light" },
+  in_progress: { hex: "#F97316", badgeClass: "bg-owly-primary-50 text-owly-primary-dark dark:bg-owly-primary-100 dark:text-owly-primary-light" },
   connected: { hex: "#22C55E", badgeClass: "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300" },
-  resolved: { hex: "#4A7C9B", badgeClass: "bg-owly-primary-50 text-owly-primary-dark dark:bg-owly-primary-100 dark:text-owly-primary-light" },
+  resolved: { hex: "#F97316", badgeClass: "bg-owly-primary-50 text-owly-primary-dark dark:bg-owly-primary-100 dark:text-owly-primary-light" },
   snoozed: { hex: "#8B5CF6", badgeClass: "bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300" },
   escalated: { hex: "#EF4444", badgeClass: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300" },
   disconnected: { hex: "#EF4444", badgeClass: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300" },
@@ -45,7 +45,7 @@ export const SEVERITY_COLORS: Record<string, ColorDef> = PRIORITY_COLORS;
 
 export const CHANNEL_COLORS: Record<string, ColorDef> = {
   whatsapp: { hex: "#22C55E", badgeClass: "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300" },
-  email: { hex: "#4A7C9B", badgeClass: "bg-owly-primary-50 text-owly-primary-dark dark:bg-owly-primary-100 dark:text-owly-primary-light" },
+  email: { hex: "#F97316", badgeClass: "bg-owly-primary-50 text-owly-primary-dark dark:bg-owly-primary-100 dark:text-owly-primary-light" },
   phone: { hex: "#C4956A", badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" },
   sms: { hex: "#C4956A", badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" },
   telegram: { hex: "#0EA5E9", badgeClass: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300" },

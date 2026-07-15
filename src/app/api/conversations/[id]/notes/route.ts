@@ -36,6 +36,7 @@ export async function POST(
 
     const note = await prisma.internalNote.create({
       data: {
+        companyId: auth.companyId,
         conversationId: id,
         content,
         authorName: auth.name || auth.username,

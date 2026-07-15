@@ -43,7 +43,7 @@ describe("Auth Module", () => {
     it("should generate a valid JWT token", async () => {
       const { generateToken } = await import("@/lib/auth");
 
-      const token = generateToken("user-123", "admin");
+      const token = generateToken("user-123", "company-abc", "admin");
       const decoded = jwt.verify(token, TEST_SECRET) as {
         userId: string;
         role: string;
@@ -56,7 +56,7 @@ describe("Auth Module", () => {
     it("should verify a valid token and return payload", async () => {
       const { generateToken, verifyToken } = await import("@/lib/auth");
 
-      const token = generateToken("user-456", "editor");
+      const token = generateToken("user-456", "company-abc", "editor");
       const payload = verifyToken(token);
 
       expect(payload).not.toBeNull();

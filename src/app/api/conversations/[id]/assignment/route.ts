@@ -84,6 +84,7 @@ export async function PUT(
 
       const systemMessage = await prisma.message.create({
         data: {
+          companyId: auth.companyId,
           conversationId: id,
           role: "system",
           content: `Conversation unassigned by ${auth.name || auth.username}`,
@@ -150,6 +151,7 @@ export async function PUT(
 
     const systemMessage = await prisma.message.create({
       data: {
+        companyId: auth.companyId,
         conversationId: id,
         role: "system",
         content: `Conversation assigned to ${member.name} by ${auth.name || auth.username}`,

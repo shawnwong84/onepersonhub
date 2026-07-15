@@ -784,7 +784,7 @@ export default function ApiDocsPage() {
     <div className="flex flex-col h-full">
       <Header
         title="API Documentation"
-        description="Integrate Cosstigo with your systems"
+        description="Integrate Paperhuman with your systems"
       />
 
       <div className="flex flex-1 overflow-hidden">

@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { ACTIVITY_ENTITIES, getActivityRequestContext, logActivity } from "@/lib/activity";
 import { ensureModuleScaffold } from "@/lib/module-installer";
 import { requireModuleAccess } from "@/lib/rbac-scope";
+import { getBillingAccount, canEnableAnotherPaidModule } from "@/lib/billing/status";
 
 type ModuleAction = "install" | "enable" | "disable" | "uninstall" | "configure" | "upgrade";
 
@@ -54,7 +55,9 @@ export async function GET(
     const denied = await requireModuleAccess(auth, slug, "read");
     if (denied) return denied;
 
-    const state = await prisma.businessModule.findUnique({ where: { slug } });
+    const state = await prisma.businessModule.findUnique({
+      where: { companyId_slug: { companyId: auth.companyId, slug } },
+    });
     return NextResponse.json(mergeModuleState(slug, state));
   } catch (error) {
     logger.error("Failed to fetch marketplace module:", error);
@@ -100,7 +103,7 @@ export async function POST(
 
     if ((action === "disable" || action === "uninstall") && !force) {
       const existing = await prisma.businessModule.findUnique({
-        where: { slug },
+        where: { companyId_slug: { companyId: auth.companyId, slug } },
         select: {
           id: true,
           _count: { select: { records: true, signals: true } },
@@ -143,6 +146,26 @@ export async function POST(
           },
           { status: 409 }
         );
+      }
+    }
+
+    if ((action === "install" || action === "enable") && !CORE_MODULE_SLUGS.includes(slug)) {
+      const currentState = await prisma.businessModule.findUnique({
+        where: { companyId_slug: { companyId: auth.companyId, slug } },
+        select: { isEnabled: true },
+      });
+      if (!currentState?.isEnabled) {
+        const account = await getBillingAccount(auth.companyId);
+        if (!(await canEnableAnotherPaidModule(account))) {
+          return NextResponse.json(
+            {
+              error:
+                "Module quota exceeded for your current plan. Upgrade your plan or disable another module first.",
+              code: "MODULE_QUOTA_EXCEEDED",
+            },
+            { status: 402 }
+          );
+        }
       }
     }
 
@@ -205,6 +228,7 @@ export async function POST(
     };
 
     const createData: Prisma.BusinessModuleCreateInput = {
+      companyId: auth.companyId,
       slug,
       name: catalog.name,
       category: catalog.category,
@@ -226,7 +250,7 @@ export async function POST(
     };
 
     const moduleState = await prisma.businessModule.upsert({
-      where: { slug },
+      where: { companyId_slug: { companyId: auth.companyId, slug } },
       create: createData,
       update: dataByAction[action],
     });
@@ -258,7 +282,12 @@ export async function POST(
     });
 
     return NextResponse.json({
-      ...mergeModuleState(slug, await prisma.businessModule.findUnique({ where: { slug } })),
+      ...mergeModuleState(
+        slug,
+        await prisma.businessModule.findUnique({
+          where: { companyId_slug: { companyId: auth.companyId, slug } },
+        })
+      ),
       scaffold,
     });
   } catch (error) {

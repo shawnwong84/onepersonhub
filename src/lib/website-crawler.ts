@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnscoped } from "@/lib/prisma";
+import { setCurrentCompany } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 import {
   createKnowledgeDocumentFromText,
@@ -61,7 +62,7 @@ export async function scrapeWebsite(url: string): Promise<{
   await assertSafeExternalUrl(url);
   const response = await fetch(url, {
     headers: {
-      "User-Agent": "Cosstigo Knowledge Ingestion/1.0",
+      "User-Agent": "Paperhuman Knowledge Ingestion/1.0",
     },
     redirect: "manual", // re-validate any redirect target ourselves instead of following blindly
   });
@@ -180,7 +181,7 @@ const SCHEDULE_INTERVALS_MS: Record<string, number> = {
 
 /** Recrawl website sources whose schedule has elapsed. Runs from the worker. */
 export async function runDueWebsiteRecrawls(limit = 2) {
-  const sources = await prisma.websiteSource.findMany({
+  const sources = await prismaUnscoped.websiteSource.findMany({
     where: {
       schedule: { in: Object.keys(SCHEDULE_INTERVALS_MS) },
       lastStatus: { not: "running" },
@@ -198,6 +199,7 @@ export async function runDueWebsiteRecrawls(limit = 2) {
 
   let recrawled = 0;
   for (const source of due) {
+    setCurrentCompany(source.companyId);
     try {
       await prisma.websiteSource.update({
         where: { id: source.id },

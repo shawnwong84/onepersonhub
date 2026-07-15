@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { currentCompanyId } from "@/lib/tenant-context";
 
 /**
  * Campaign Manager
@@ -101,6 +102,7 @@ export async function sendProactiveMessage(
 
   const conversation = await prisma.conversation.create({
     data: {
+      companyId: currentCompanyId(),
       channel,
       customerName: customer.name,
       customerContact:
@@ -114,6 +116,7 @@ export async function sendProactiveMessage(
 
   await prisma.message.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId: conversation.id,
       role: "assistant",
       content: message,

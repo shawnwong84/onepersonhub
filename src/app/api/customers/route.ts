@@ -72,6 +72,7 @@ export async function POST(request: NextRequest) {
 
     const customer = await prisma.customer.create({
       data: {
+        companyId: auth.companyId,
         name: name.trim(),
         email: email?.trim() || "",
         phone: phone?.trim() || "",
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
         ...(notes
           ? {
               notes: {
-                create: { content: notes.trim(), authorName: "Admin" },
+                create: { companyId: auth.companyId, content: notes.trim(), authorName: "Admin" },
               },
             }
           : {}),

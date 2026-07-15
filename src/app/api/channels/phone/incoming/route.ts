@@ -23,9 +23,10 @@ export async function POST(request: NextRequest) {
     }
 
     const from = params.From || "";
+    const to = params.To || "";
     const callSid = params.CallSid || "";
 
-    const twiml = await handleIncomingCall(from, callSid);
+    const twiml = await handleIncomingCall(from, callSid, to);
 
     return new NextResponse(twiml, {
       headers: { "Content-Type": "text/xml" },

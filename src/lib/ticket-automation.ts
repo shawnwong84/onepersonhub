@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { currentCompanyId } from "@/lib/tenant-context";
 import { sendWhatsAppMessage } from "@/lib/channels/whatsapp";
 import { createNotification } from "@/lib/notifications";
 import { emitConversationUpdate, emitNewMessage } from "@/lib/realtime";
@@ -108,7 +109,7 @@ export async function sendTicketCloseReply(input: TicketCloseReplyInput) {
   });
 
   const settings = await prisma.settings.findUnique({
-    where: { id: "default" },
+    where: { companyId: currentCompanyId() },
     select: {
       ticketCloseAutoReplyEnabled: true,
       ticketCloseRequireApproval: true,
@@ -273,6 +274,7 @@ export async function sendTicketCloseReply(input: TicketCloseReplyInput) {
 
   const saved = await prisma.message.create({
     data: {
+      companyId: currentCompanyId(),
       conversationId: ticket.conversation.id,
       role: "assistant",
       content,

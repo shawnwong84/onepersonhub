@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.settings.findUnique({
-        where: { id: "default" },
+        where: { companyId: auth.companyId },
         select: {
           monthlyTokenBudget: true,
           tokenBudgetWarningPercent: true,

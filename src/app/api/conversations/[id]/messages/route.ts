@@ -84,6 +84,7 @@ export async function POST(
 
     const message = await prisma.message.create({
       data: {
+        companyId: auth.companyId,
         conversationId: id,
         role: messageRole,
         content: content.trim(),

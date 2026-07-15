@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { cookies } from "next/headers";
-import { prisma } from "@/lib/prisma";
+import { prismaUnscoped } from "@/lib/prisma";
+import { TEST_COMPANY_ID } from "../setup";
 
-const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+const mockPrisma = prismaUnscoped as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const mockCookies = vi.mocked(cookies);
 
 function mockAuthCookie(token: string | undefined) {
@@ -20,10 +21,11 @@ describe("session invalidation via tokenVersion", () => {
 
   it("accepts a token whose version matches the current admin row", async () => {
     const { generateToken, getCurrentUser } = await import("@/lib/auth");
-    const token = generateToken("admin-1", "admin", "owner", 2);
+    const token = generateToken("admin-1", TEST_COMPANY_ID, "admin", "owner", 2);
     mockAuthCookie(token);
     mockPrisma.admin.findUnique.mockResolvedValue({
       id: "admin-1",
+      companyId: TEST_COMPANY_ID,
       username: "admin",
       name: "Admin",
       role: "admin",
@@ -37,10 +39,11 @@ describe("session invalidation via tokenVersion", () => {
 
   it("rejects a token issued before a password change bumped tokenVersion", async () => {
     const { generateToken, getCurrentUser } = await import("@/lib/auth");
-    const token = generateToken("admin-1", "admin", "owner", 1); // stale version
+    const token = generateToken("admin-1", TEST_COMPANY_ID, "admin", "owner", 1); // stale version
     mockAuthCookie(token);
     mockPrisma.admin.findUnique.mockResolvedValue({
       id: "admin-1",
+      companyId: TEST_COMPANY_ID,
       username: "admin",
       name: "Admin",
       role: "admin",
@@ -55,12 +58,13 @@ describe("session invalidation via tokenVersion", () => {
     const jwt = await import("jsonwebtoken");
     // Simulate a token signed before tokenVersion existed in the payload.
     const legacyToken = jwt.sign(
-      { userId: "admin-1", role: "admin", userType: "owner" },
+      { userId: "admin-1", companyId: TEST_COMPANY_ID, role: "admin", userType: "owner" },
       process.env.JWT_SECRET || "test-only-fallback-secret"
     );
     mockAuthCookie(legacyToken);
     mockPrisma.admin.findUnique.mockResolvedValue({
       id: "admin-1",
+      companyId: TEST_COMPANY_ID,
       username: "admin",
       name: "Admin",
       role: "admin",
@@ -74,10 +78,11 @@ describe("session invalidation via tokenVersion", () => {
 
   it("rejects a member session invalidated by a credential reset", async () => {
     const { generateToken, getCurrentUser } = await import("@/lib/auth");
-    const token = generateToken("member-1", "agent", "member", 0);
+    const token = generateToken("member-1", TEST_COMPANY_ID, "agent", "member", 0);
     mockAuthCookie(token);
     mockPrisma.teamMember.findUnique.mockResolvedValue({
       id: "member-1",
+      companyId: TEST_COMPANY_ID,
       username: "jane",
       name: "Jane",
       rbacRole: "agent",

@@ -17,6 +17,7 @@ describe("PUT /api/tickets/[id]", () => {
   it("rejects an update from a scoped agent when the ticket is assigned to someone else", async () => {
     mockRequireAuth.mockResolvedValueOnce({
       userId: "agent-1",
+      companyId: "test-company-id",
       role: "agent",
       username: "agent1",
       name: "Agent One",
@@ -42,6 +43,7 @@ describe("PUT /api/tickets/[id]", () => {
   it("allows a scoped agent to update a ticket assigned to them", async () => {
     mockRequireAuth.mockResolvedValueOnce({
       userId: "agent-1",
+      companyId: "test-company-id",
       role: "agent",
       username: "agent1",
       name: "Agent One",

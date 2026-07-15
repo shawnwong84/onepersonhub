@@ -8,11 +8,11 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --owly-primary: #4A7C9B;
-  --owly-primary-dark: #2D5A7B;
-  --owly-primary-light: #A8D0E6;
-  --owly-primary-50: #EDF5FA;
-  --owly-primary-100: #D6E8F2;
+  --owly-primary: #F97316;
+  --owly-primary-dark: #EA580C;
+  --owly-primary-light: #FDBA74;
+  --owly-primary-50: #FFF7ED;
+  --owly-primary-100: #FFEDD5;
   --owly-accent: #C4956A;
   --owly-accent-light: #E0C4A8;
   --owly-bg: #F8FAFC;
@@ -22,18 +22,18 @@
   --owly-border: #E2E8F0;
   --owly-sidebar: #1E293B;
   --owly-sidebar-hover: #334155;
-  --owly-sidebar-active: #4A7C9B;
+  --owly-sidebar-active: #F97316;
   --owly-success: #22C55E;
   --owly-warning: #F59E0B;
   --owly-danger: #EF4444;
 }
 
 .dark {
-  --owly-primary: #5A9CBB;
-  --owly-primary-dark: #4A8CAB;
-  --owly-primary-light: #3A6C8B;
-  --owly-primary-50: #1A2A3A;
-  --owly-primary-100: #1E3448;
+  --owly-primary: #FB923C;
+  --owly-primary-dark: #F97316;
+  --owly-primary-light: #7C2D12;
+  --owly-primary-50: #431407;
+  --owly-primary-100: #7C2D12;
   --owly-accent: #D4A57A;
   --owly-accent-light: #4A3A2A;
   --owly-bg: #0F172A;
@@ -43,7 +43,7 @@
   --owly-border: #334155;
   --owly-sidebar: #0F172A;
   --owly-sidebar-hover: #1E293B;
-  --owly-sidebar-active: #4A7C9B;
+  --owly-sidebar-active: #F97316;
 }
 
 @theme inline {

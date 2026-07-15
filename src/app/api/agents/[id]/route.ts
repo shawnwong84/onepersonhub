@@ -167,6 +167,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       if (channelAccountIds.length) {
         await tx.agentChannelAccount.createMany({
           data: channelAccountIds.map((channelAccountId, index) => ({
+            companyId: auth.companyId,
             agentId: id,
             channelAccountId,
             isPrimary: index === 0,
@@ -175,10 +176,30 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         });
       }
 
+      // AgentChannelAccount records the assignment for this page's own
+      // editing UI, but real message routing reads ChannelAccount.defaultAgentId
+      // (see src/lib/channels/email.ts) - keep both in sync so assigning an
+      // agent to a specific account here actually changes routing, not just
+      // bookkeeping. Release accounts that were pointing at this agent but
+      // got deselected before claiming the newly selected ones.
+      await tx.channelAccount.updateMany({
+        where: {
+          defaultAgentId: id,
+          ...(channelAccountIds.length ? { id: { notIn: channelAccountIds } } : {}),
+        },
+        data: { defaultAgentId: null },
+      });
+      if (channelAccountIds.length) {
+        await tx.channelAccount.updateMany({
+          where: { id: { in: channelAccountIds } },
+          data: { defaultAgentId: id },
+        });
+      }
+
       const scopeRows = [
-        ...categoryIds.map((categoryId) => ({ agentId: id, categoryId })),
-        ...entryIds.map((entryId) => ({ agentId: id, entryId })),
-        ...documentIds.map((documentId) => ({ agentId: id, documentId })),
+        ...categoryIds.map((categoryId) => ({ companyId: auth.companyId, agentId: id, categoryId })),
+        ...entryIds.map((entryId) => ({ companyId: auth.companyId, agentId: id, entryId })),
+        ...documentIds.map((documentId) => ({ companyId: auth.companyId, agentId: id, documentId })),
       ];
       if (scopeRows.length) {
         await tx.agentKnowledgeScope.createMany({ data: scopeRows });
@@ -187,6 +208,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       if (flowIds.length) {
         await tx.agentWorkflow.createMany({
           data: flowIds.map((flowId, index) => ({
+            companyId: auth.companyId,
             agentId: id,
             flowId,
             priority: (index + 1) * 10,
@@ -197,6 +219,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       if (tools.length) {
         await tx.agentTool.createMany({
           data: tools.map((tool) => ({
+            companyId: auth.companyId,
             agentId: id,
             ...tool,
           })),

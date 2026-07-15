@@ -29,7 +29,9 @@ export async function POST(
     }
 
     if (rbacRole !== undefined) {
-      const roleExists = await prisma.role.findUnique({ where: { name: rbacRole } });
+      const roleExists = await prisma.role.findUnique({
+        where: { companyId_name: { companyId: auth.companyId, name: rbacRole } },
+      });
       if (!roleExists) {
         const validRoles = await prisma.role.findMany({ select: { name: true } });
         return NextResponse.json(

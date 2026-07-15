@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
 
     const flow = await prisma.flow.create({
       data: {
+        companyId: auth.companyId,
         name: name.trim(),
         description: description?.trim() || "",
         startNodeId: startNodeId || "",

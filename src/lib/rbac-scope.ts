@@ -5,6 +5,7 @@ import { CORE_MODULE_SLUGS, MARKETPLACE_MODULES } from "@/lib/marketplace/catalo
 
 export interface ScopedUser {
   userId: string;
+  companyId: string;
   role: string;
   userType: "owner" | "member";
 }
@@ -16,7 +17,7 @@ export interface ScopedUser {
  * false, matching the behavior of the old hardcoded hierarchy check.
  */
 export async function isUnscoped(user: ScopedUser): Promise<boolean> {
-  return user.userType === "owner" || (await isRoleUnscoped(user.role));
+  return user.userType === "owner" || (await isRoleUnscoped(user.companyId, user.role));
 }
 
 /**

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 const spec = {
   openapi: "3.0.3",
   info: {
-    title: "Cosstigo API",
+    title: "Paperhuman API",
     description: "AI-powered customer support agent API. Multi-channel support for WhatsApp, Email, and Phone with autonomous AI actions.",
     version: "2026-04-07",
     contact: {
