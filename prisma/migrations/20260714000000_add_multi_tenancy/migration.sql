@@ -390,8 +390,8 @@ CREATE UNIQUE INDEX "Connector_companyId_provider_name_key" ON "Connector"("comp
 ALTER TABLE "Settings" ADD COLUMN "companyId" TEXT;
 UPDATE "Settings" SET "companyId" = '00000000-0000-0000-0000-000000000001' WHERE id = 'default';
 -- Any deployment somehow without a "default" row yet gets one created fresh.
-INSERT INTO "Settings" ("companyId")
-SELECT '00000000-0000-0000-0000-000000000001'
+INSERT INTO "Settings" ("companyId", "updatedAt")
+SELECT '00000000-0000-0000-0000-000000000001', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM "Settings" WHERE "companyId" = '00000000-0000-0000-0000-000000000001');
 ALTER TABLE "Settings" DROP CONSTRAINT "Settings_pkey";
 ALTER TABLE "Settings" DROP COLUMN "id";
@@ -416,8 +416,8 @@ ALTER TABLE "BusinessHours" ADD CONSTRAINT "BusinessHours_companyId_fkey" FOREIG
 ALTER TABLE "BillingAccount" ADD COLUMN "companyId" TEXT;
 UPDATE "BillingAccount" SET "companyId" = '00000000-0000-0000-0000-000000000001' WHERE id = 'default';
 -- Any deployment somehow without a "default" row yet gets one created fresh.
-INSERT INTO "BillingAccount" ("companyId")
-SELECT '00000000-0000-0000-0000-000000000001'
+INSERT INTO "BillingAccount" ("companyId", "updatedAt")
+SELECT '00000000-0000-0000-0000-000000000001', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM "BillingAccount" WHERE "companyId" = '00000000-0000-0000-0000-000000000001');
 ALTER TABLE "BillingAccount" DROP CONSTRAINT "BillingAccount_pkey";
 ALTER TABLE "BillingAccount" DROP COLUMN "id";
