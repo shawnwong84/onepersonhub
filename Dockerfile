@@ -14,6 +14,13 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 
 RUN npx prisma generate
+
+# On memory-constrained hosts (small droplets etc.), V8 auto-sizes its heap
+# ceiling off the container's memory cgroup and ignores swap, so `next build`
+# (webpack compile + typecheck) can hit an internal ~1GB heap limit and abort
+# with "JavaScript heap out of memory" even when swap is available at the OS
+# level. Raising max-old-space-size explicitly lets it actually use swap.
+ENV NODE_OPTIONS="--max-old-space-size=3072"
 RUN npm run build
 
 # ---- Runner stage ----
