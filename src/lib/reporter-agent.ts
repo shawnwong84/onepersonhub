@@ -402,10 +402,18 @@ async function collectOperationalRisks(config: ReporterConfig): Promise<Attentio
     // Real support tickets, not module records - Customer Care's own model.
     // Not tied to a BusinessModule, so these items skip the module-signal
     // persistence step below (no moduleSlug to resolve a moduleId from).
+    // Urgent/high priority tickets are surfaced immediately regardless of
+    // age - waiting a full staleTicketHours before a scan even mentions a
+    // high-priority ticket defeats the point of proactive monitoring.
+    // Medium/low priority tickets keep the staleness gate, since flagging
+    // every brand-new low-priority ticket would just be noise.
     prisma.ticket.findMany({
       where: {
         status: { notIn: ["resolved", "closed"] },
-        updatedAt: { lt: staleTicketBefore },
+        OR: [
+          { priority: { in: ["urgent", "high"] } },
+          { updatedAt: { lt: staleTicketBefore } },
+        ],
       },
       orderBy: { updatedAt: "asc" },
       take: 50,
