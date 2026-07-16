@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { fillUrlTemplate, getConnectorProvider } from "@/lib/connectors/catalog";
+import { buildEcomAuthorizeUrl } from "@/lib/connectors/ecom-sdk";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -31,15 +32,21 @@ export async function POST(request: NextRequest) {
     if (!isAuthenticated(auth)) return auth;
 
     const catalogEntry = getConnectorProvider(provider);
-    if (!catalogEntry || catalogEntry.authType !== "oauth2" || !catalogEntry.oauth) {
+    if (!catalogEntry || catalogEntry.authType !== "oauth2" || (!catalogEntry.oauth && !catalogEntry.ecomSdkPlatform)) {
       return NextResponse.json({ error: "Unknown or non-OAuth2 provider" }, { status: 400 });
     }
+
+    // The single credentials-location field is "the secret" staged in
+    // pendingClientSecret until the callback completes - named clientSecret
+    // for standard OAuth2 providers, partnerKey/appSecret for e-commerce
+    // ones (see ecomSdkPlatform providers in catalog.ts).
+    const credentialsFieldKey = catalogEntry.fields.find((f) => f.location === "credentials")?.key ?? "clientSecret";
 
     const pendingConfig: Record<string, string> = {};
     let clientSecret = "";
     for (const field of catalogEntry.fields) {
       const value = asString(body[field.key]);
-      if (field.key === "clientSecret") {
+      if (field.key === credentialsFieldKey) {
         clientSecret = value;
       } else if (field.location === "config" && value) {
         pendingConfig[field.key] = value;
@@ -47,7 +54,7 @@ export async function POST(request: NextRequest) {
     }
 
     const missing = catalogEntry.fields.filter(
-      (f) => f.required && f.key !== "clientSecret" && !pendingConfig[f.key]
+      (f) => f.required && f.key !== credentialsFieldKey && !pendingConfig[f.key]
     );
     const name = asString(body.name);
     if (missing.length > 0 || !clientSecret || (!connectorId && !name)) {
@@ -55,7 +62,7 @@ export async function POST(request: NextRequest) {
         {
           error: `Missing required fields: ${[
             ...missing.map((f) => f.key),
-            !clientSecret ? "clientSecret" : null,
+            !clientSecret ? credentialsFieldKey : null,
             !connectorId && !name ? "name" : null,
           ]
             .filter(Boolean)
@@ -68,7 +75,7 @@ export async function POST(request: NextRequest) {
     const state = base64url(crypto.randomBytes(32));
     let codeVerifier: string | null = null;
     let codeChallenge: string | null = null;
-    if (catalogEntry.oauth.pkce) {
+    if (catalogEntry.oauth?.pkce) {
       codeVerifier = base64url(crypto.randomBytes(32));
       codeChallenge = base64url(crypto.createHash("sha256").update(codeVerifier).digest());
     }
@@ -89,11 +96,23 @@ export async function POST(request: NextRequest) {
     });
 
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/connectors/oauth/callback`;
-    const authorizeUrl = new URL(fillUrlTemplate(catalogEntry.oauth.authorizeUrlTemplate, pendingConfig));
+
+    if (catalogEntry.ecomSdkPlatform) {
+      const redirectUrl = buildEcomAuthorizeUrl(
+        catalogEntry.ecomSdkPlatform,
+        pendingConfig,
+        { [credentialsFieldKey]: clientSecret },
+        redirectUri,
+        state
+      );
+      return NextResponse.json({ redirectUrl });
+    }
+
+    const authorizeUrl = new URL(fillUrlTemplate(catalogEntry.oauth!.authorizeUrlTemplate, pendingConfig));
     authorizeUrl.searchParams.set("client_id", pendingConfig.clientId ?? "");
     authorizeUrl.searchParams.set("redirect_uri", redirectUri);
     authorizeUrl.searchParams.set("response_type", "code");
-    authorizeUrl.searchParams.set("scope", catalogEntry.oauth.scopes.join(" "));
+    authorizeUrl.searchParams.set("scope", catalogEntry.oauth!.scopes.join(" "));
     authorizeUrl.searchParams.set("state", state);
     if (codeChallenge) {
       authorizeUrl.searchParams.set("code_challenge", codeChallenge);

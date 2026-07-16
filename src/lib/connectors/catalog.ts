@@ -1,13 +1,16 @@
 /**
- * ERP connector provider catalog. Each entry describes the fields a connect
- * form needs, and (for OAuth2 providers) how to build the authorize/token
- * URLs. This is intentionally a static, hand-maintained table - not driven
- * by an external registry - because every provider here needs a
- * customer-specific tenant/instance and their own OAuth app registration;
- * there is no generic multi-tenant client this app can ship with.
+ * Connector provider catalog (ERP + e-commerce). Each entry describes the
+ * fields a connect form needs, and (for OAuth2 providers) how to build the
+ * authorize/token URLs. This is intentionally a static, hand-maintained
+ * table - not driven by an external registry - because every provider here
+ * needs a customer-specific tenant/instance and their own OAuth app
+ * registration; there is no generic multi-tenant client this app can ship
+ * with. E-commerce providers (Shopee, Lazada, TikTok Shop) route through
+ * the `ecom-connector` SDK instead of the generic template fetch below -
+ * see `ecomSdkPlatform` on ConnectorProviderDef.
  */
 
-export type ConnectorProvider = "sap" | "oracle" | "microsoft365" | "dynamics_bc" | "odoo";
+export type ConnectorProvider = "sap" | "oracle" | "microsoft365" | "dynamics_bc" | "odoo" | "shopee" | "lazada" | "tiktok-shop";
 export type ConnectorAuthType = "oauth2" | "api_key" | "basic_auth";
 
 export interface ConnectorFieldDef {
@@ -44,6 +47,13 @@ export interface ConnectorProviderDef {
   fields: ConnectorFieldDef[];
   oauth?: OAuthProviderDef;
   testConnection: TestConnectionDef;
+  /** When set, OAuth authorize/token-exchange/refresh delegates to the
+   * `ecom-connector` npm SDK (src/lib/connectors/ecom-sdk.ts) instead of the
+   * generic template-based fetch above - Shopee/TikTok Shop sign every
+   * request (HMAC) rather than using a vanilla OAuth2 client_secret POST,
+   * which the generic flow can't produce. No `oauth` block is set for these
+   * providers since that shape doesn't apply. */
+  ecomSdkPlatform?: "shopee" | "lazada" | "tiktok-shop";
 }
 
 export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
@@ -152,6 +162,53 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
       // versions (13 vs 17) - structurally correct per documented API,
       // unverified live.
       description: "POST {instanceUrl}/jsonrpc — common.authenticate(database, '__api__', apiKey, {})",
+      liveVerified: false,
+    },
+  },
+  {
+    provider: "shopee",
+    name: "Shopee",
+    description: "Connect a Shopee shop via the Shopee Open Platform (partner app).",
+    authType: "oauth2",
+    fields: [
+      { key: "partnerId", label: "Partner ID", location: "config", type: "text", required: true },
+      { key: "shopId", label: "Shop ID", location: "config", type: "text", required: true },
+      { key: "partnerKey", label: "Partner Key", location: "credentials", type: "password", required: true },
+    ],
+    ecomSdkPlatform: "shopee",
+    testConnection: {
+      description: "SDK call: getProducts({ limit: 1 }) using the stored access token.",
+      liveVerified: false,
+    },
+  },
+  {
+    provider: "lazada",
+    name: "Lazada",
+    description: "Connect a Lazada seller account via the Lazada Open Platform.",
+    authType: "oauth2",
+    fields: [
+      { key: "appKey", label: "App Key", location: "config", type: "text", required: true },
+      { key: "appSecret", label: "App Secret", location: "credentials", type: "password", required: true },
+    ],
+    ecomSdkPlatform: "lazada",
+    testConnection: {
+      description: "SDK call: getProducts({ limit: 1 }) using the stored access token.",
+      liveVerified: false,
+    },
+  },
+  {
+    provider: "tiktok-shop",
+    name: "TikTok Shop",
+    description: "Connect a TikTok Shop via the TikTok Shop Partner Center.",
+    authType: "oauth2",
+    fields: [
+      { key: "appKey", label: "App Key", location: "config", type: "text", required: true },
+      { key: "shopId", label: "Shop ID", location: "config", type: "text", required: true },
+      { key: "appSecret", label: "App Secret", location: "credentials", type: "password", required: true },
+    ],
+    ecomSdkPlatform: "tiktok-shop",
+    testConnection: {
+      description: "SDK call: getProducts({ limit: 1 }) using the stored access token.",
       liveVerified: false,
     },
   },

@@ -209,7 +209,7 @@ function ConnectorsPageInner() {
 
   return (
     <>
-      <Header title="Connectors" description="Connect SAP, Oracle, Microsoft 365, Dynamics 365 Business Central, and Odoo." />
+      <Header title="Connectors" description="Connect ERP systems and e-commerce platforms." />
 
       <div className="p-4 sm:p-6 space-y-6">
         <section>
@@ -257,7 +257,7 @@ function ConnectorsPageInner() {
             </div>
           ) : connectors.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-owly-text-light">
-              No connectors yet. Connect one of the ERP systems above to get started.
+              No connectors yet. Connect one of the systems above to get started.
             </p>
           ) : (
             <div className="overflow-x-auto">

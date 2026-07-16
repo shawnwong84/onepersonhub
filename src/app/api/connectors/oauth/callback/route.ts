@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { requireAuth, isAuthenticated } from "@/lib/route-auth";
 import { fillUrlTemplate, getConnectorProvider } from "@/lib/connectors/catalog";
+import { exchangeEcomCode } from "@/lib/connectors/ecom-sdk";
 
 /**
  * Completes an OAuth2 authorization-code flow. This route is reached via a
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
   const idpError = searchParams.get("error");
   const state = searchParams.get("state");
   const code = searchParams.get("code");
+  // Shopee's redirect includes its own shop_id query param alongside code/state.
+  const shopIdParam = searchParams.get("shop_id") ?? undefined;
 
   if (idpError) {
     return NextResponse.redirect(`${redirectBase}?oauth_error=${encodeURIComponent(idpError)}`);
@@ -46,16 +49,65 @@ export async function GET(request: NextRequest) {
   }
 
   const catalogEntry = getConnectorProvider(stateRecord.provider);
-  if (!catalogEntry?.oauth) {
+  if (!catalogEntry?.oauth && !catalogEntry?.ecomSdkPlatform) {
     return NextResponse.redirect(`${redirectBase}?oauth_error=unknown_provider`);
   }
 
   const pendingConfig = (stateRecord.pendingConfig ?? {}) as Record<string, string>;
   const clientSecret = stateRecord.pendingClientSecret ?? "";
+  const credentialsFieldKey = catalogEntry.fields.find((f) => f.location === "credentials")?.key ?? "clientSecret";
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/connectors/oauth/callback`;
 
+  if (catalogEntry.ecomSdkPlatform) {
+    try {
+      const result = await exchangeEcomCode(
+        catalogEntry.ecomSdkPlatform,
+        pendingConfig,
+        { [credentialsFieldKey]: clientSecret },
+        code,
+        { shopId: shopIdParam, state }
+      );
+      if (!result.accessToken) {
+        return NextResponse.redirect(`${redirectBase}?oauth_error=no_access_token`);
+      }
+
+      const tokenExpiresAt = new Date(Date.now() + (result.expiresIn ?? 3600) * 1000).toISOString();
+      const finalConfig = result.shopId ? { ...pendingConfig, shopId: result.shopId } : pendingConfig;
+      const credentials = {
+        [credentialsFieldKey]: clientSecret,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        tokenExpiresAt,
+      };
+
+      if (stateRecord.connectorId) {
+        await prisma.connector.update({
+          where: { id: stateRecord.connectorId },
+          data: { status: "connected", lastError: null, credentials, config: finalConfig },
+        });
+      } else {
+        await prisma.connector.create({
+          data: {
+            companyId: auth.companyId,
+            provider: stateRecord.provider,
+            name: stateRecord.pendingName || `${catalogEntry.name} connection`,
+            authType: "oauth2",
+            status: "connected",
+            config: finalConfig,
+            credentials,
+          },
+        });
+      }
+
+      return NextResponse.redirect(`${redirectBase}?connected=${encodeURIComponent(stateRecord.provider)}`);
+    } catch (error) {
+      logger.error("Connector e-commerce OAuth callback failed:", error);
+      return NextResponse.redirect(`${redirectBase}?oauth_error=callback_failed`);
+    }
+  }
+
   try {
-    const tokenUrl = fillUrlTemplate(catalogEntry.oauth.tokenUrlTemplate, pendingConfig);
+    const tokenUrl = fillUrlTemplate(catalogEntry.oauth!.tokenUrlTemplate, pendingConfig);
     const params: Record<string, string> = {
       grant_type: "authorization_code",
       code,

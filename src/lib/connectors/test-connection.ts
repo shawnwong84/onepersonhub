@@ -1,5 +1,6 @@
 import { fillUrlTemplate, getConnectorProvider } from "@/lib/connectors/catalog";
 import { getValidAccessToken } from "@/lib/connectors/oauth-refresh";
+import { testEcomConnection, type EcomSdkPlatform } from "@/lib/connectors/ecom-sdk";
 import type { Connector } from "@/generated/prisma/client";
 
 export interface TestConnectionResult {
@@ -111,6 +112,15 @@ async function testOdoo(connector: Connector): Promise<TestConnectionResult> {
   }
 }
 
+async function testEcomProvider(connector: Connector, platform: EcomSdkPlatform): Promise<TestConnectionResult> {
+  // Ensures the access token is fresh before the SDK call, same as the
+  // ERP OAuth2 providers below.
+  await getValidAccessToken(connector);
+  const config = (connector.config ?? {}) as Record<string, unknown>;
+  const credentials = (connector.credentials ?? {}) as Record<string, unknown>;
+  return testEcomConnection(platform, config, credentials);
+}
+
 async function runFetchCheck(url: string, init: RequestInit): Promise<TestConnectionResult> {
   const testedAt = new Date().toISOString();
   try {
@@ -145,6 +155,12 @@ export async function testConnection(connector: Connector): Promise<TestConnecti
       return testDynamicsBc(connector);
     case "odoo":
       return testOdoo(connector);
+    case "shopee":
+      return testEcomProvider(connector, "shopee");
+    case "lazada":
+      return testEcomProvider(connector, "lazada");
+    case "tiktok-shop":
+      return testEcomProvider(connector, "tiktok-shop");
     default:
       return { ok: false, message: `Unknown provider: ${connector.provider}`, testedAt: new Date().toISOString() };
   }

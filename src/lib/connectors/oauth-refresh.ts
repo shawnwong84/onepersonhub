@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { fillUrlTemplate, getConnectorProvider } from "@/lib/connectors/catalog";
+import { refreshEcomToken } from "@/lib/connectors/ecom-sdk";
 import type { Connector } from "@/generated/prisma/client";
 
 const REFRESH_MARGIN_MS = 2 * 60 * 1000;
@@ -20,7 +21,7 @@ interface Credentials {
  */
 export async function getValidAccessToken(connector: Connector): Promise<string> {
   const catalogEntry = getConnectorProvider(connector.provider);
-  if (!catalogEntry?.oauth) {
+  if (!catalogEntry?.oauth && !catalogEntry?.ecomSdkPlatform) {
     throw new Error(`Provider ${connector.provider} is not an OAuth2 provider`);
   }
 
@@ -34,7 +35,7 @@ export async function getValidAccessToken(connector: Connector): Promise<string>
     return credentials.accessToken;
   }
 
-  if (!credentials.refreshToken || !credentials.clientSecret) {
+  if (!credentials.refreshToken) {
     await prisma.connector.update({
       where: { id: connector.id },
       data: { status: "error", lastError: "No refresh token available; reconnect required." },
@@ -42,7 +43,47 @@ export async function getValidAccessToken(connector: Connector): Promise<string>
     throw new Error("No refresh token available; reconnect required.");
   }
 
-  const tokenUrl = fillUrlTemplate(catalogEntry.oauth.tokenUrlTemplate, config);
+  // e-commerce providers (Shopee/Lazada/TikTok Shop) sign every request via
+  // the ecom-connector SDK rather than a vanilla client_secret POST - they
+  // also don't have a "clientSecret" field, so this branch skips that
+  // requirement entirely and returns before it's checked below.
+  if (catalogEntry.ecomSdkPlatform) {
+    try {
+      const result = await refreshEcomToken(catalogEntry.ecomSdkPlatform, config, credentials as unknown as Record<string, unknown>);
+      const tokenExpiresAt = new Date(Date.now() + (result.expiresIn ?? 3600) * 1000).toISOString();
+      await prisma.connector.update({
+        where: { id: connector.id },
+        data: {
+          status: "connected",
+          lastError: null,
+          credentials: {
+            ...credentials,
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken ?? credentials.refreshToken,
+            tokenExpiresAt,
+          },
+        },
+      });
+      return result.accessToken;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Token refresh failed";
+      await prisma.connector.update({
+        where: { id: connector.id },
+        data: { status: "error", lastError: message.slice(0, 500) },
+      });
+      throw error;
+    }
+  }
+
+  if (!credentials.clientSecret) {
+    await prisma.connector.update({
+      where: { id: connector.id },
+      data: { status: "error", lastError: "No refresh token available; reconnect required." },
+    });
+    throw new Error("No refresh token available; reconnect required.");
+  }
+
+  const tokenUrl = fillUrlTemplate(catalogEntry.oauth!.tokenUrlTemplate, config);
   const clientId = typeof config.clientId === "string" ? config.clientId : "";
 
   let response: Response;
@@ -55,7 +96,7 @@ export async function getValidAccessToken(connector: Connector): Promise<string>
         refresh_token: credentials.refreshToken,
         client_id: clientId,
         client_secret: credentials.clientSecret,
-        scope: catalogEntry.oauth.scopes.join(" "),
+        scope: catalogEntry.oauth!.scopes.join(" "),
       }),
       signal: AbortSignal.timeout(8000),
     });
