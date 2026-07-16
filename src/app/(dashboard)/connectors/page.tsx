@@ -217,7 +217,7 @@ function ConnectorsPageInner() {
     <>
       <Header title="Connectors" description="Connect ERP systems and e-commerce platforms." />
 
-      <div className="p-4 sm:p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
         {CATEGORY_ORDER.map((category) => {
           const providers = CONNECTOR_PROVIDERS.filter((provider) => provider.category === category);
           if (providers.length === 0) return null;
