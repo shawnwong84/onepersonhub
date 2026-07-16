@@ -53,16 +53,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ecomSdkPlatform providers have no credentials-location field at all -
+    // their secret is the deployment's own env-sourced partner app
+    // credential (see ecom-sdk.ts), not something staged per-connector.
+    const requiresClientSecret = !catalogEntry.ecomSdkPlatform;
+
     const missing = catalogEntry.fields.filter(
       (f) => f.required && f.key !== credentialsFieldKey && !pendingConfig[f.key]
     );
     const name = asString(body.name);
-    if (missing.length > 0 || !clientSecret || (!connectorId && !name)) {
+    if (missing.length > 0 || (requiresClientSecret && !clientSecret) || (!connectorId && !name)) {
       return NextResponse.json(
         {
           error: `Missing required fields: ${[
             ...missing.map((f) => f.key),
-            !clientSecret ? credentialsFieldKey : null,
+            requiresClientSecret && !clientSecret ? credentialsFieldKey : null,
             !connectorId && !name ? "name" : null,
           ]
             .filter(Boolean)
@@ -88,7 +93,7 @@ export async function POST(request: NextRequest) {
         connectorId,
         pendingName: name || null,
         pendingConfig,
-        pendingClientSecret: clientSecret,
+        pendingClientSecret: clientSecret || null,
         codeVerifier,
         createdBy: auth.userId,
         expiresAt: new Date(Date.now() + STATE_TTL_MS),

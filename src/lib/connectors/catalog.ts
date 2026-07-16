@@ -183,11 +183,11 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     description: "Connect a Shopee shop via the Shopee Open Platform (partner app).",
     category: "ecommerce",
     authType: "oauth2",
-    fields: [
-      { key: "partnerId", label: "Partner ID", location: "config", type: "text", required: true },
-      { key: "shopId", label: "Shop ID", location: "config", type: "text", required: true },
-      { key: "partnerKey", label: "Partner Key", location: "credentials", type: "password", required: true },
-    ],
+    // Partner ID/Key are this deployment's own partner app credentials
+    // (SHOPEE_PARTNER_ID/SHOPEE_PARTNER_KEY env vars) - shared across every
+    // company, never entered per-connector. No fields to collect: the user
+    // just names the connection and clicks through to Shopee's OAuth screen.
+    fields: [],
     ecomSdkPlatform: "shopee",
     testConnection: {
       description: "SDK call: getProducts({ limit: 1 }) using the stored access token.",
@@ -200,10 +200,9 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     description: "Connect a Lazada seller account via the Lazada Open Platform.",
     category: "ecommerce",
     authType: "oauth2",
-    fields: [
-      { key: "appKey", label: "App Key", location: "config", type: "text", required: true },
-      { key: "appSecret", label: "App Secret", location: "credentials", type: "password", required: true },
-    ],
+    // App Key/Secret come from LAZADA_APP_KEY/LAZADA_APP_SECRET env vars -
+    // see the shopee entry's comment above.
+    fields: [],
     ecomSdkPlatform: "lazada",
     testConnection: {
       description: "SDK call: getProducts({ limit: 1 }) using the stored access token.",
@@ -216,11 +215,9 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     description: "Connect a TikTok Shop via the TikTok Shop Partner Center.",
     category: "ecommerce",
     authType: "oauth2",
-    fields: [
-      { key: "appKey", label: "App Key", location: "config", type: "text", required: true },
-      { key: "shopId", label: "Shop ID", location: "config", type: "text", required: true },
-      { key: "appSecret", label: "App Secret", location: "credentials", type: "password", required: true },
-    ],
+    // App Key/Secret come from TIKTOK_SHOP_APP_KEY/TIKTOK_SHOP_APP_SECRET
+    // env vars - see the shopee entry's comment above.
+    fields: [],
     ecomSdkPlatform: "tiktok-shop",
     testConnection: {
       description: "SDK call: getProducts({ limit: 1 }) using the stored access token.",

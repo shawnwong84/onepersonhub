@@ -73,8 +73,9 @@ export async function GET(request: NextRequest) {
 
       const tokenExpiresAt = new Date(Date.now() + (result.expiresIn ?? 3600) * 1000).toISOString();
       const finalConfig = result.shopId ? { ...pendingConfig, shopId: result.shopId } : pendingConfig;
+      // No credentials-location field for these platforms - the partner
+      // app secret lives in env, not per-connector (see ecom-sdk.ts).
       const credentials = {
-        [credentialsFieldKey]: clientSecret,
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         tokenExpiresAt,

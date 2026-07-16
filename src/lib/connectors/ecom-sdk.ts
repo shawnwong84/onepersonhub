@@ -39,22 +39,47 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
 }
 
-/** Builds the exact credentials shape each platform's SDK class expects,
- * pulling from our own config/credentials JSON blobs regardless of which
- * one a field is stored under (that split is our storage/encryption
- * concern, not the SDK's). */
+/** Shopee/Lazada/TikTok Shop partner-app credentials are this deployment's
+ * own, shared across every company - one partner app per platform, set via
+ * env vars rather than entered per-connector (see .env.example). Only the
+ * per-shop accessToken/refreshToken/shopId are tenant-specific and stored
+ * on the Connector row. */
+function getEcomAppCredentials(platform: EcomSdkPlatform): Record<string, string> {
+  if (platform === "shopee") {
+    return {
+      partnerId: process.env.SHOPEE_PARTNER_ID ?? "",
+      partnerKey: process.env.SHOPEE_PARTNER_KEY ?? "",
+    };
+  }
+  if (platform === "lazada") {
+    return {
+      appKey: process.env.LAZADA_APP_KEY ?? "",
+      appSecret: process.env.LAZADA_APP_SECRET ?? "",
+    };
+  }
+  return {
+    appKey: process.env.TIKTOK_SHOP_APP_KEY ?? "",
+    appSecret: process.env.TIKTOK_SHOP_APP_SECRET ?? "",
+  };
+}
+
+/** Builds the exact credentials shape each platform's SDK class expects:
+ * app-level credentials from env (see getEcomAppCredentials) plus the
+ * per-shop shopId/accessToken carried in this connector's own stored
+ * config/credentials JSON blobs. */
 function buildSdkConnector(
   platform: EcomSdkPlatform,
   config: Record<string, unknown>,
   credentials: Record<string, unknown>
 ) {
+  const appCredentials = getEcomAppCredentials(platform);
   const accessToken = asString(credentials.accessToken);
   if (platform === "shopee") {
     return createEcomConnector({
       platform: "shopee",
       credentials: {
-        partnerId: asString(config.partnerId) ?? "",
-        partnerKey: asString(credentials.partnerKey) ?? "",
+        partnerId: appCredentials.partnerId,
+        partnerKey: appCredentials.partnerKey,
         shopId: asString(config.shopId) ?? "",
         accessToken,
       },
@@ -64,8 +89,8 @@ function buildSdkConnector(
     return createEcomConnector({
       platform: "lazada",
       credentials: {
-        appKey: asString(config.appKey) ?? "",
-        appSecret: asString(credentials.appSecret) ?? "",
+        appKey: appCredentials.appKey,
+        appSecret: appCredentials.appSecret,
         accessToken,
       },
     });
@@ -73,8 +98,8 @@ function buildSdkConnector(
   return createEcomConnector({
     platform: "tiktok-shop",
     credentials: {
-      appKey: asString(config.appKey) ?? "",
-      appSecret: asString(credentials.appSecret) ?? "",
+      appKey: appCredentials.appKey,
+      appSecret: appCredentials.appSecret,
       shopId: asString(config.shopId) ?? "",
       accessToken,
     },
@@ -95,7 +120,7 @@ export function buildEcomAuthorizeUrl(
 ): string {
   if (platform === "tiktok-shop") {
     const url = new URL(TIKTOK_AUTHORIZE_URL);
-    url.searchParams.set("app_key", asString(config.appKey) ?? "");
+    url.searchParams.set("app_key", getEcomAppCredentials("tiktok-shop").appKey);
     url.searchParams.set("state", state);
     url.searchParams.set("redirect_uri", redirectUri);
     return url.toString();
