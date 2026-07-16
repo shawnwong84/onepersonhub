@@ -3,13 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { currentCompanyId } from "@/lib/tenant-context";
 import { logger } from "@/lib/logger";
 import { estimateTokens } from "@/lib/knowledge-ingestion";
-import { getAccessibleModuleSlugs, type ScopedUser } from "@/lib/rbac-scope";
+import { getAccessibleModuleSlugs, ticketScope, type ScopedUser } from "@/lib/rbac-scope";
 import { findMarketplaceModule, MARKETPLACE_MODULES } from "@/lib/marketplace/catalog";
 
 export interface ReporterChatResult {
   threadId: string;
   reply: string;
-  citations: { type: "record" | "signal"; id: string; moduleSlug: string; title: string }[];
+  citations: { type: "record" | "signal" | "ticket"; id: string; moduleSlug: string; title: string }[];
   refused: boolean;
 }
 
@@ -33,6 +33,15 @@ interface ContextSignal {
   status: string;
   title: string;
   description: string;
+}
+
+interface ContextTicket {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  updatedAt: Date;
 }
 
 const QUESTION_STOPWORDS = new Set([
@@ -70,7 +79,7 @@ function extractKeywords(question: string): string[] {
  * (see src/lib/prisma.ts), and this app's whole security model rests on
  * every query going through it.
  */
-async function gatherScopedContext(accessibleSlugs: string[], question = "") {
+async function gatherScopedContext(user: ScopedUser, accessibleSlugs: string[], question = "") {
   const modules = await prisma.businessModule.findMany({
     where: { slug: { in: accessibleSlugs }, isInstalled: true },
     select: { id: true, slug: true, name: true },
@@ -103,7 +112,7 @@ async function gatherScopedContext(accessibleSlugs: string[], question = "") {
 
   const keywords = extractKeywords(question);
 
-  const [candidateRecords, signals] = await Promise.all([
+  const [candidateRecords, signals, tickets] = await Promise.all([
     prisma.moduleRecord.findMany({
       where: { moduleId: { in: recordModuleIds } },
       orderBy: { updatedAt: "desc" },
@@ -123,6 +132,17 @@ async function gatherScopedContext(accessibleSlugs: string[], question = "") {
         title: true,
         description: true,
       },
+    }),
+    // Support tickets are a core built-in area, not a marketplace module, so
+    // they never showed up in the ModuleRecord search above - this chat had
+    // zero visibility into the real Ticket table until this fetch was added.
+    // ticketScope applies the same per-user assignment scoping as the real
+    // Tickets page/API (unscoped roles see all, scoped roles see their own).
+    prisma.ticket.findMany({
+      where: await ticketScope(user),
+      orderBy: { updatedAt: "desc" },
+      take: 100,
+      select: { id: true, title: true, description: true, status: true, priority: true, updatedAt: true },
     }),
   ]);
 
@@ -165,7 +185,16 @@ async function gatherScopedContext(accessibleSlugs: string[], question = "") {
     description: s.description,
   }));
 
-  return { contextRecords, contextSignals, installedModules: modules };
+  const contextTickets: ContextTicket[] = tickets.map((t) => ({
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    status: t.status,
+    priority: t.priority,
+    updatedAt: t.updatedAt,
+  }));
+
+  return { contextRecords, contextSignals, contextTickets, installedModules: modules };
 }
 
 /** Modules the question mentions that the user cannot access. */
@@ -243,7 +272,8 @@ export async function answerReporterQuestion(
     .slice(0, 3)
     .map((m) => m.content)
     .join(" ");
-  const { contextRecords, contextSignals } = await gatherScopedContext(
+  const { contextRecords, contextSignals, contextTickets } = await gatherScopedContext(
+    user,
     accessibleSlugs,
     `${recentUserText} ${question}`
   );
@@ -260,14 +290,21 @@ export async function answerReporterQuestion(
   const systemPrompt = [
     "You are the Reporter Agent, an operations monitor for a small business automation platform called Paperhuman.",
     `You are talking to ${userName}. They can only access these modules: ${accessibleNames.join(", ")}.`,
-    "Answer questions about module records, open signals, and operational status using ONLY the data below.",
-    "Be concise and practical. When you reference a record or signal, include its id in square brackets like [record:<id>] or [signal:<id>] so the UI can link it.",
+    "Answer questions about module records, open signals, support tickets, and operational status using ONLY the data below.",
+    "Be concise and practical. When you reference a record, signal, or ticket, include its id in square brackets like [record:<id>], [signal:<id>], or [ticket:<id>] so the UI can link it.",
     "If the data does not contain the answer, say so plainly - never invent records.",
     "",
     "OPEN SIGNALS (items needing attention):",
     contextSignals.length
       ? contextSignals
           .map((s) => `- [signal:${s.id}] (${s.moduleSlug}) ${s.severity.toUpperCase()} ${s.title}: ${s.description || s.signalType}`)
+          .join("\n")
+      : "- none",
+    "",
+    "SUPPORT TICKETS:",
+    contextTickets.length
+      ? contextTickets
+          .map((t) => `- [ticket:${t.id}] "${t.title}" status=${t.status} priority=${t.priority} updated=${t.updatedAt.toISOString()}`)
           .join("\n")
       : "- none",
     "",
@@ -303,9 +340,16 @@ export async function answerReporterQuestion(
 
   // Extract citations the model actually used.
   const citations: ReporterChatResult["citations"] = [];
-  for (const match of reply.matchAll(/\[(record|signal):([a-z0-9-]+)\]/gi)) {
-    const type = match[1].toLowerCase() as "record" | "signal";
+  for (const match of reply.matchAll(/\[(record|signal|ticket):([a-z0-9-]+)\]/gi)) {
+    const type = match[1].toLowerCase() as "record" | "signal" | "ticket";
     const id = match[2];
+    if (type === "ticket") {
+      const ticket = contextTickets.find((t) => t.id === id);
+      if (ticket && !citations.some((c) => c.id === id)) {
+        citations.push({ type, id, moduleSlug: "", title: ticket.title });
+      }
+      continue;
+    }
     const source =
       type === "record"
         ? contextRecords.find((r) => r.id === id)

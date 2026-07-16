@@ -6,7 +6,7 @@ import { Bot, Loader2, Send } from "lucide-react";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
 export interface ChatCitation {
-  type: "record" | "signal";
+  type: "record" | "signal" | "ticket";
   id: string;
   moduleSlug: string;
   title: string;
@@ -20,9 +20,9 @@ interface ChatMessage {
   createdAt: string;
 }
 
-/** Replace [record:id]/[signal:id] markers with readable text. */
+/** Replace [record:id]/[signal:id]/[ticket:id] markers with readable text. */
 function renderContent(content: string) {
-  return content.replace(/\[(record|signal):([a-z0-9-]+)\]/gi, "");
+  return content.replace(/\[(record|signal|ticket):([a-z0-9-]+)\]/gi, "");
 }
 
 export function ReporterChat({ compact = false }: { compact?: boolean }) {
@@ -148,7 +148,9 @@ export function ReporterChat({ compact = false }: { compact?: boolean }) {
                         href={
                           citation.type === "record"
                             ? `/modules/${citation.moduleSlug}/records/${citation.id}`
-                            : `/modules/${citation.moduleSlug}`
+                            : citation.type === "ticket"
+                              ? "/tickets"
+                              : `/modules/${citation.moduleSlug}`
                         }
                         className="rounded-md bg-owly-surface px-2 py-0.5 text-xs font-medium text-owly-primary hover:underline"
                       >
