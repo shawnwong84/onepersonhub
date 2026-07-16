@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { getStatusColor, getPriorityColor } from "@/lib/status-colors";
-import { getWorkspaceConfig, type WorkspaceField } from "@/lib/marketplace/workspace-config";
+import { getWorkspaceConfig, type WorkspaceField, type LineItemRow } from "@/lib/marketplace/workspace-config";
 
 interface MarketplaceModule {
   slug: string;
@@ -105,6 +105,7 @@ function ModuleWorkspacePageContent() {
     sourceChannel: "",
     sourceMessage: "",
     fields: {} as Record<string, string>,
+    lineItems: [] as LineItemRow[],
   };
   const [newRecord, setNewRecord] = useState(emptyRecord);
 
@@ -205,6 +206,9 @@ function ModuleWorkspacePageContent() {
         const raw = newRecord.fields[field.key];
         if (raw === undefined || raw === "") continue;
         data[field.key] = field.type === "number" ? Number(raw) : raw;
+      }
+      if (workspace.lineItemsKey) {
+        data[workspace.lineItemsKey] = newRecord.lineItems.filter((row) => row.item.trim() !== "");
       }
 
       const res = await fetch(`/api/modules/${slug}/records`, {
@@ -686,6 +690,14 @@ function ModuleWorkspacePageContent() {
                   }
                 />
               ))}
+              {workspace.lineItemsKey && (
+                <div className="md:col-span-2">
+                  <LineItemsEditor
+                    value={newRecord.lineItems}
+                    onChange={(rows) => setNewRecord((r) => ({ ...r, lineItems: rows }))}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2 border-t border-owly-border px-5 py-4">
               <button
@@ -933,5 +945,69 @@ function WorkspaceFieldInput({
         className="mt-1 h-10 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
       />
     </label>
+  );
+}
+
+function LineItemsEditor({
+  value,
+  onChange,
+}: {
+  value: LineItemRow[];
+  onChange: (rows: LineItemRow[]) => void;
+}) {
+  function updateRow(index: number, patch: Partial<LineItemRow>) {
+    onChange(value.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }
+  function removeRow(index: number) {
+    onChange(value.filter((_, i) => i !== index));
+  }
+  function addRow() {
+    onChange([...value, { item: "", quantity: 1 }]);
+  }
+
+  return (
+    <div className="rounded-lg border border-owly-border">
+      <div className="flex items-center justify-between border-b border-owly-border px-3 py-2">
+        <span className="text-sm font-semibold text-owly-text">Line items</span>
+        <button
+          type="button"
+          onClick={addRow}
+          className="rounded-lg border border-owly-border px-2.5 py-1 text-xs font-semibold text-owly-text hover:bg-owly-bg"
+        >
+          + Add item
+        </button>
+      </div>
+      {value.length === 0 ? (
+        <p className="px-3 py-4 text-center text-sm text-owly-text-light">No line items yet.</p>
+      ) : (
+        <div className="space-y-2 p-3">
+          {value.map((row, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <input
+                value={row.item}
+                onChange={(event) => updateRow(index, { item: event.target.value })}
+                placeholder="Item name"
+                className="h-9 flex-1 rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+              />
+              <input
+                type="number"
+                min={1}
+                value={row.quantity}
+                onChange={(event) => updateRow(index, { quantity: Math.max(1, Number(event.target.value) || 1) })}
+                className="h-9 w-20 rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+              />
+              <button
+                type="button"
+                onClick={() => removeRow(index)}
+                className="px-2 text-owly-text-light hover:text-owly-danger"
+                aria-label="Remove item"
+              >
+                &times;
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

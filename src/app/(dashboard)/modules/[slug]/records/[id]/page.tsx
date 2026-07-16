@@ -5,7 +5,31 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CheckCircle2, ChevronDown, Clock, Save, Send } from "lucide-react";
 import { formatRelativeTime } from "@/lib/utils";
-import { getWorkspaceConfig, type WorkspaceField } from "@/lib/marketplace/workspace-config";
+import { getWorkspaceConfig, type WorkspaceField, type LineItemRow } from "@/lib/marketplace/workspace-config";
+
+/** Accepts the legacy newline-delimited string shape, a plain string array,
+ * or the current { item, quantity }[] shape - so records saved before this
+ * per-item-quantity redesign still load and display correctly. */
+function parseLineItems(value: unknown): LineItemRow[] {
+  if (Array.isArray(value)) {
+    return value.map((row) => {
+      if (row && typeof row === "object" && !Array.isArray(row)) {
+        const r = row as Record<string, unknown>;
+        const qty = Number(r.quantity);
+        return { item: String(r.item ?? ""), quantity: Number.isFinite(qty) && qty > 0 ? qty : 1 };
+      }
+      return { item: String(row ?? ""), quantity: 1 };
+    });
+  }
+  if (typeof value === "string" && value.trim()) {
+    return value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => ({ item: line, quantity: 1 }));
+  }
+  return [];
+}
 
 interface ModuleRecordEvent {
   id: string;
@@ -63,6 +87,7 @@ export default function ModuleRecordDetailPage() {
     reporterState: "normal",
     reporterNotes: "",
     fields: {} as Record<string, string>,
+    lineItems: [] as LineItemRow[],
     otherData: "{}",
   });
 
@@ -80,6 +105,7 @@ export default function ModuleRecordDetailPage() {
       const fields: Record<string, string> = {};
       const otherData: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(data)) {
+        if (workspace.lineItemsKey && key === workspace.lineItemsKey) continue;
         const isPrimitive = value === null || ["string", "number", "boolean"].includes(typeof value);
         if (knownKeys.has(key) && isPrimitive) {
           fields[key] = value === null ? "" : String(value);
@@ -94,6 +120,7 @@ export default function ModuleRecordDetailPage() {
         reporterState: next.reporterState,
         reporterNotes: next.reporterNotes || "",
         fields,
+        lineItems: workspace.lineItemsKey ? parseLineItems(data[workspace.lineItemsKey]) : [],
         otherData: JSON.stringify(otherData, null, 2),
       });
     } catch (err) {
@@ -123,6 +150,9 @@ export default function ModuleRecordDetailPage() {
         const raw = draft.fields[field.key];
         if (raw === undefined || raw === "") continue;
         parsedData[field.key] = field.type === "number" ? Number(raw) : raw;
+      }
+      if (workspace.lineItemsKey) {
+        parsedData[workspace.lineItemsKey] = draft.lineItems.filter((row) => row.item.trim() !== "");
       }
 
       const res = await fetch(`/api/modules/${slug}/records/${id}`, {
@@ -326,7 +356,12 @@ export default function ModuleRecordDetailPage() {
               </div>
             </div>
 
-            {workspace.lineItemsKey && record && <LineItems value={record.data?.[workspace.lineItemsKey]} />}
+            {workspace.lineItemsKey && record && (
+              <LineItemsEditor
+                value={draft.lineItems}
+                onChange={(rows) => setDraft((d) => ({ ...d, lineItems: rows }))}
+              />
+            )}
 
             {workspace.fields.length > 0 && (
               <div className="rounded-xl border border-owly-border bg-owly-surface p-5">
@@ -489,61 +524,85 @@ function statusLabel(value: string) {
   return value.replace(/_/g, " ").replace(/^./, (char) => char.toUpperCase());
 }
 
-function LineItems({ value }: { value: unknown }) {
-  let rows: Record<string, unknown>[] = [];
-  if (Array.isArray(value)) {
-    rows = value.map((item) =>
-      item && typeof item === "object" && !Array.isArray(item)
-        ? (item as Record<string, unknown>)
-        : { item: item }
-    );
-  } else if (typeof value === "string" && value.trim()) {
-    rows = value
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => ({ item: line }));
+function LineItemsEditor({
+  value,
+  onChange,
+}: {
+  value: LineItemRow[];
+  onChange: (rows: LineItemRow[]) => void;
+}) {
+  function updateRow(index: number, patch: Partial<LineItemRow>) {
+    onChange(value.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
-  if (rows.length === 0) return null;
-
-  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  function removeRow(index: number) {
+    onChange(value.filter((_, i) => i !== index));
+  }
+  function addRow() {
+    onChange([...value, { item: "", quantity: 1 }]);
+  }
 
   return (
     <div className="rounded-xl border border-owly-border bg-owly-surface">
-      <div className="border-b border-owly-border px-5 py-4">
+      <div className="flex items-center justify-between border-b border-owly-border px-5 py-4">
         <h2 className="font-semibold text-owly-text">Line items</h2>
+        <button
+          type="button"
+          onClick={addRow}
+          className="rounded-lg border border-owly-border px-3 py-1.5 text-sm font-semibold text-owly-text hover:bg-owly-bg"
+        >
+          + Add item
+        </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-owly-border text-left text-xs font-semibold uppercase tracking-wide text-owly-text-light">
-              <th className="px-5 py-2.5 w-10">#</th>
-              {columns.map((column) => (
-                <th key={column} className="px-3 py-2.5">{statusLabel(column)}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-owly-border">
-            {rows.map((row, index) => (
-              <tr key={index}>
-                <td className="px-5 py-2.5 text-owly-text-light">{index + 1}</td>
-                {columns.map((column) => {
-                  const cell = row[column];
-                  const text =
-                    cell === undefined || cell === null
-                      ? "--"
-                      : typeof cell === "object"
-                      ? JSON.stringify(cell)
-                      : String(cell);
-                  return (
-                    <td key={column} className="px-3 py-2.5 text-owly-text">{text}</td>
-                  );
-                })}
+      {value.length === 0 ? (
+        <p className="px-5 py-8 text-center text-sm text-owly-text-light">No line items yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-owly-border text-left text-xs font-semibold uppercase tracking-wide text-owly-text-light">
+                <th className="px-5 py-2.5 w-10">#</th>
+                <th className="px-3 py-2.5">Item</th>
+                <th className="px-3 py-2.5 w-32">Quantity</th>
+                <th className="px-3 py-2.5 w-10" />
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-owly-border">
+              {value.map((row, index) => (
+                <tr key={index}>
+                  <td className="px-5 py-2.5 text-owly-text-light">{index + 1}</td>
+                  <td className="px-3 py-2">
+                    <input
+                      value={row.item}
+                      onChange={(event) => updateRow(index, { item: event.target.value })}
+                      placeholder="Item name"
+                      className="h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="number"
+                      min={1}
+                      value={row.quantity}
+                      onChange={(event) => updateRow(index, { quantity: Math.max(1, Number(event.target.value) || 1) })}
+                      className="h-9 w-full rounded-lg border border-owly-border bg-owly-bg px-3 text-sm text-owly-text outline-none focus:border-owly-primary"
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(index)}
+                      className="text-owly-text-light hover:text-owly-danger"
+                      aria-label="Remove item"
+                    >
+                      &times;
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

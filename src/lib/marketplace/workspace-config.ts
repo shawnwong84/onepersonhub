@@ -6,6 +6,14 @@ export interface WorkspaceField {
   placeholder?: string;
 }
 
+/** A single row for a module whose lineItemsKey field holds per-item data
+ * (e.g. Orders: item name + its own quantity, instead of one order-wide
+ * quantity field). */
+export interface LineItemRow {
+  item: string;
+  quantity: number;
+}
+
 export interface WorkspaceAction {
   label: string;
   from: string[];
@@ -90,12 +98,10 @@ export const MODULE_WORKSPACES: Record<string, ModuleWorkspaceConfig> = {
     fields: [
       { key: "customer", label: "Customer", type: "text" },
       { key: "requestedDeliveryDate", label: "Requested delivery date", type: "date" },
-      { key: "items", label: "Items", type: "textarea", placeholder: "One item per line" },
-      { key: "quantity", label: "Quantity", type: "number" },
       { key: "notes", label: "Notes", type: "textarea" },
       { key: "confidence", label: "Extraction confidence", type: "number", placeholder: "0.0 - 1.0" },
     ],
-    listColumns: ["customer", "requestedDeliveryDate", "quantity"],
+    listColumns: ["customer", "requestedDeliveryDate"],
     actions: [
       { label: "Submit for approval", from: ["draft"], to: "pending_approval", tone: "primary" },
       { label: "Approve order", from: ["pending_approval"], to: "confirmed", tone: "success" },
@@ -103,6 +109,9 @@ export const MODULE_WORKSPACES: Record<string, ModuleWorkspaceConfig> = {
       { label: "Mark fulfilled", from: ["confirmed"], to: "fulfilled", tone: "success" },
       { label: "Cancel order", from: ["draft", "confirmed"], to: "cancelled", tone: "danger" },
     ],
+    // Quantity lives per-line-item here (data.items: {item, quantity}[]),
+    // not as one order-wide field - edited via the dedicated line-items
+    // editor on the add/edit forms rather than the generic fields list.
     lineItemsKey: "items",
     customerReply: {
       label: "Send confirmation to customer",
@@ -110,7 +119,16 @@ export const MODULE_WORKSPACES: Record<string, ModuleWorkspaceConfig> = {
       buildMessage: (record) => {
         const items = record.data.items;
         const itemsText = Array.isArray(items)
-          ? items.map((item) => (typeof item === "object" ? JSON.stringify(item) : String(item))).join(", ")
+          ? items
+              .map((row) => {
+                if (row && typeof row === "object" && !Array.isArray(row)) {
+                  const r = row as Record<string, unknown>;
+                  const qty = Number(r.quantity);
+                  return Number.isFinite(qty) && qty > 0 ? `${qty}x ${r.item}` : String(r.item ?? "");
+                }
+                return String(row);
+              })
+              .join(", ")
           : typeof items === "string"
           ? items.replace(/\n/g, ", ")
           : "";
