@@ -60,6 +60,13 @@ ENV PORT=3000
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# `adduser --system` (no --home) leaves HOME=/nonexistent, which isn't even
+# created. Chromium/crashpad needs a real writable HOME to construct its
+# crash-database path, or it fails with "chrome_crashpad_handler: --database
+# is required" when whatsapp-web.js launches it. /app is already owned by
+# nextjs:nodejs below, so point HOME there instead.
+ENV HOME=/app
+
 WORKDIR /app
 
 COPY --from=builder /app/package*.json ./
