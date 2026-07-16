@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { cn } from "@/lib/utils";
 import {
@@ -10,12 +11,16 @@ import {
   Mail,
   MessageCircle,
   Workflow,
+  Radar,
   Save,
   Eye,
   EyeOff,
   CheckCircle,
   AlertCircle,
   Loader2,
+  RefreshCw,
+  Signal,
+  Database,
 } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 
@@ -66,7 +71,8 @@ type SectionKey =
   | "phone"
   | "email"
   | "whatsapp"
-  | "automation";
+  | "automation"
+  | "reporter";
 
 type SettingsValue = string | number | boolean;
 
@@ -88,6 +94,7 @@ const tabs: TabDef[] = [
   { key: "email", label: "Email (SMTP/IMAP)", icon: Mail },
   { key: "whatsapp", label: "WhatsApp", icon: MessageCircle },
   { key: "automation", label: "Automation", icon: Workflow },
+  { key: "reporter", label: "Reporter Agent", icon: Radar },
 ];
 
 // Which fields belong to each section (used for partial saves)
@@ -122,6 +129,10 @@ const sectionFields: Record<SectionKey, (keyof SettingsData)[]> = {
     "ticketCloseRequireApproval",
     "ticketCloseReplyTemplate",
   ],
+  // Reporter Agent config lives on BusinessModule.config, not Settings - this
+  // tab manages its own fetch/save (see ReporterAgentSection) instead of
+  // going through the generic sectionFields/saveSection PUT-to-/api/settings flow.
+  reporter: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -870,6 +881,217 @@ function AutomationSection({
   );
 }
 
+interface HeartbeatSettings {
+  heartbeatEnabled: boolean;
+  heartbeatMinutes: number;
+  notifySeverity: string;
+  emailRecipients: string;
+}
+
+function ReporterAgentSection() {
+  const [openSignals, setOpenSignals] = useState(0);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const [heartbeat, setHeartbeat] = useState<HeartbeatSettings>({
+    heartbeatEnabled: true,
+    heartbeatMinutes: 15,
+    notifySeverity: "high",
+    emailRecipients: "",
+  });
+  const [savingHeartbeat, setSavingHeartbeat] = useState(false);
+  const [heartbeatNotice, setHeartbeatNotice] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const [signalsRes, moduleRes] = await Promise.all([
+        fetch("/api/modules/signals?status=open&limit=1"),
+        fetch("/api/marketplace/modules/reporter-agent"),
+      ]);
+      if (signalsRes.ok) {
+        const body = await signalsRes.json();
+        setOpenSignals(body.pagination?.total ?? 0);
+      }
+      if (moduleRes.ok) {
+        const body = await moduleRes.json();
+        const config = body.config || {};
+        setHeartbeat({
+          heartbeatEnabled: config.heartbeatEnabled !== false,
+          heartbeatMinutes: Number(config.heartbeatMinutes) || 15,
+          notifySeverity: config.notifySeverity || "high",
+          emailRecipients: Array.isArray(config.emailRecipients) ? config.emailRecipients.join(", ") : "",
+        });
+      }
+    } catch {
+      // panel data is non-critical
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function runScan() {
+    setScanning(true);
+    setScanError("");
+    try {
+      const res = await fetch("/api/modules/reporter-agent/scan", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error?.message || body?.error || "Scan failed");
+      await load();
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Scan failed");
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function saveHeartbeat() {
+    setSavingHeartbeat(true);
+    setHeartbeatNotice("");
+    try {
+      const res = await fetch("/api/marketplace/modules/reporter-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "configure",
+          config: {
+            heartbeatEnabled: heartbeat.heartbeatEnabled,
+            heartbeatMinutes: Math.max(5, Number(heartbeat.heartbeatMinutes) || 15),
+            notifySeverity: heartbeat.notifySeverity,
+            emailRecipients: heartbeat.emailRecipients
+              .split(",")
+              .map((value) => value.trim())
+              .filter((value) => value.includes("@")),
+          },
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Failed to save heartbeat settings");
+      setHeartbeatNotice("Heartbeat settings saved.");
+    } catch (err) {
+      setHeartbeatNotice(err instanceof Error ? err.message : "Failed to save heartbeat settings");
+    } finally {
+      setSavingHeartbeat(false);
+    }
+  }
+
+  async function runHeartbeatNow() {
+    setSavingHeartbeat(true);
+    setHeartbeatNotice("");
+    try {
+      const res = await fetch("/api/reporter/heartbeat", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || "Heartbeat failed");
+      setHeartbeatNotice(`Heartbeat ran: ${body.newSignals ?? 0} new signal(s), ${body.delivered ?? 0} chat deliveries.`);
+      await load();
+    } catch (err) {
+      setHeartbeatNotice(err instanceof Error ? err.message : "Heartbeat failed");
+    } finally {
+      setSavingHeartbeat(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-owly-text">
+          <div className="h-1.5 w-1.5 rounded-full bg-owly-primary" />
+          Monitoring
+        </h4>
+        {scanError && <p className="mb-2 text-sm text-owly-danger">{scanError}</p>}
+        <div className="flex items-center justify-between rounded-lg border border-owly-border bg-owly-bg px-3 py-2.5">
+          <span className="flex items-center gap-2 text-sm text-owly-text">
+            <Signal className="h-4 w-4 text-owly-primary" />
+            Open signals
+          </span>
+          <span className="text-lg font-bold text-owly-text">{openSignals}</span>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={scanning}
+            onClick={runScan}
+            className="inline-flex items-center gap-2 rounded-lg border border-owly-border bg-owly-surface px-3 py-1.5 text-sm font-semibold text-owly-text hover:bg-owly-bg disabled:opacity-60"
+          >
+            <RefreshCw className={scanning ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+            {scanning ? "Scanning..." : "Run scan"}
+          </button>
+          <Link
+            href="/modules/reporter-agent"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-owly-primary hover:underline"
+          >
+            <Database className="h-4 w-4" />
+            Open Reporter workspace
+          </Link>
+        </div>
+      </div>
+
+      <div>
+        <h4 className="mb-1 flex items-center gap-2 text-sm font-semibold text-owly-text">
+          <div className="h-1.5 w-1.5 rounded-full bg-owly-primary" />
+          Heartbeat
+        </h4>
+        <p className="mb-4 text-xs text-owly-text-light">
+          The Reporter Agent scans on a schedule and messages affected users when new issues appear.
+        </p>
+        {heartbeatNotice && (
+          <p className="mb-3 rounded-lg bg-owly-bg px-3 py-2 text-sm text-owly-text">{heartbeatNotice}</p>
+        )}
+        <div className="space-y-4">
+          <FormField label="Heartbeat enabled">
+            <div className="flex items-center justify-between rounded-lg border border-owly-border bg-owly-bg px-3 py-2">
+              <span className="text-sm text-owly-text">{heartbeat.heartbeatEnabled ? "Enabled" : "Disabled"}</span>
+              <ToggleInput
+                checked={heartbeat.heartbeatEnabled}
+                onChange={(v) => setHeartbeat((h) => ({ ...h, heartbeatEnabled: v }))}
+              />
+            </div>
+          </FormField>
+          <FormField label="Frequency (minutes)">
+            <NumberInput
+              value={heartbeat.heartbeatMinutes}
+              onChange={(v) => setHeartbeat((h) => ({ ...h, heartbeatMinutes: v }))}
+              min={5}
+            />
+          </FormField>
+          <FormField label="Notify (bell) from severity">
+            <SelectInput
+              value={heartbeat.notifySeverity}
+              onChange={(v) => setHeartbeat((h) => ({ ...h, notifySeverity: v }))}
+              options={["low", "medium", "high", "urgent", "critical"].map((s) => ({ value: s, label: s }))}
+            />
+          </FormField>
+          <FormField label="Critical alert emails" description="Comma-separated.">
+            <TextInput
+              value={heartbeat.emailRecipients}
+              onChange={(v) => setHeartbeat((h) => ({ ...h, emailRecipients: v }))}
+              placeholder="ops@example.com"
+            />
+          </FormField>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={savingHeartbeat}
+              onClick={saveHeartbeat}
+              className="rounded-lg bg-owly-primary px-4 py-2 text-sm font-semibold text-white hover:bg-owly-primary-dark disabled:opacity-60"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              disabled={savingHeartbeat}
+              onClick={runHeartbeatNow}
+              className="rounded-lg border border-owly-border px-4 py-2 text-sm font-semibold text-owly-text hover:bg-owly-bg disabled:opacity-60"
+            >
+              Run heartbeat now
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main settings page
 // ---------------------------------------------------------------------------
@@ -926,6 +1148,17 @@ export default function SettingsPage() {
     }, 3000);
   }, []);
 
+  // Supports deep links like /settings?tab=reporter (e.g. from the Reporter
+  // page). Read directly off window.location instead of useSearchParams()
+  // to avoid that hook's Suspense-boundary requirement for a one-time,
+  // client-only initial read.
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab && tabs.some((t) => t.key === tab)) {
+      setActiveTab(tab as SectionKey);
+    }
+  }, []);
+
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
@@ -978,6 +1211,7 @@ export default function SettingsPage() {
     email: <EmailSection data={data} update={update} />,
     whatsapp: <WhatsAppSection data={data} update={update} />,
     automation: <AutomationSection data={data} update={update} />,
+    reporter: <ReporterAgentSection />,
   };
 
   if (loading) {
@@ -1066,19 +1300,24 @@ export default function SettingsPage() {
                     "Configure WhatsApp integration for messaging support."}
                   {activeTab === "automation" &&
                     "Control automated replies and customer-facing lifecycle updates."}
+                  {activeTab === "reporter" &&
+                    "Admin-only: run scans and configure the Reporter Agent's scheduled heartbeat."}
                 </p>
               </div>
 
               {sectionRenderers[activeTab]}
             </div>
 
-            {/* Sticky so the save action stays reachable without scrolling
-                to the bottom of long sections (e.g. General, Email). */}
-            <div className="sticky bottom-0 mt-4 -mx-1 bg-owly-bg/95 px-1 pb-1 pt-2 backdrop-blur-sm">
-              <div className="rounded-xl border border-owly-border bg-owly-surface px-4 py-3">
-                <SaveButton onClick={saveSection} saving={saving} />
+            {/* Reporter Agent manages its own save/action buttons inline
+                (different API than the generic Settings PUT), so the shared
+                sticky Save button is redundant there and hidden. */}
+            {activeTab !== "reporter" && (
+              <div className="sticky bottom-0 mt-4 -mx-1 bg-owly-bg/95 px-1 pb-1 pt-2 backdrop-blur-sm">
+                <div className="rounded-xl border border-owly-border bg-owly-surface px-4 py-3">
+                  <SaveButton onClick={saveSection} saving={saving} />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
