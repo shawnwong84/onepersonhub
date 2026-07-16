@@ -137,9 +137,9 @@ export default function ReporterPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-owly-bg">
+    <div className="h-full overflow-hidden bg-owly-bg">
       <div className="mx-auto grid h-full max-w-[1400px] gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="flex min-h-[70vh] flex-col overflow-hidden rounded-xl border border-owly-border bg-owly-surface">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-owly-border bg-owly-surface">
           <div className="flex items-center justify-between border-b border-owly-border px-5 py-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-owly-primary-50 text-owly-primary">
@@ -158,7 +158,7 @@ export default function ReporterPage() {
           </div>
         </section>
 
-        <aside className="space-y-5">
+        <aside className="min-h-0 space-y-5 overflow-y-auto">
           <section className="rounded-xl border border-owly-border bg-owly-surface p-5">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-owly-text">Monitoring</h2>
