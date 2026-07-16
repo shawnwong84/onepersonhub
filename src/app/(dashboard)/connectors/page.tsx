@@ -21,9 +21,15 @@ import { unwrapListResponse } from "@/lib/api-response";
 import { useToast } from "@/components/ui/toast";
 import {
   CONNECTOR_PROVIDERS,
+  CONNECTOR_CATEGORY_LABELS,
+  type ConnectorCategory,
   type ConnectorFieldDef,
   type ConnectorProviderDef,
 } from "@/lib/connectors/catalog";
+
+// E-commerce first since it's the newest/most actively growing category -
+// order here is deliberate, not alphabetical.
+const CATEGORY_ORDER: ConnectorCategory[] = ["ecommerce", "erp"];
 
 interface ConnectorData {
   id: string;
@@ -212,36 +218,42 @@ function ConnectorsPageInner() {
       <Header title="Connectors" description="Connect ERP systems and e-commerce platforms." />
 
       <div className="p-4 sm:p-6 space-y-6">
-        <section>
-          <h2 className="mb-3 font-semibold text-owly-text">Available connectors</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {CONNECTOR_PROVIDERS.map((provider) => (
-              <div key={provider.provider} className="flex flex-col rounded-xl border border-owly-border bg-owly-surface p-4">
-                <div className="flex items-center gap-2">
-                  <Plug className="h-5 w-5 text-owly-primary" />
-                  <h3 className="font-semibold text-owly-text">{provider.name}</h3>
-                </div>
-                <p className="mt-2 flex-1 text-sm text-owly-text-light">{provider.description}</p>
-                <p className="mt-2 text-xs uppercase tracking-wide text-owly-text-light">
-                  {provider.authType === "oauth2" ? "OAuth 2.0" : "API key / Basic auth"}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => openConnect(provider)}
-                  className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-owly-primary px-3 py-2 text-sm font-semibold text-white"
-                >
-                  <Plus className="h-4 w-4" />
-                  Connect
-                </button>
-                {(byProvider.get(provider.provider)?.length ?? 0) > 0 && (
-                  <p className="mt-2 text-xs text-owly-text-light">
-                    {byProvider.get(provider.provider)!.length} connection{byProvider.get(provider.provider)!.length > 1 ? "s" : ""}
-                  </p>
-                )}
+        {CATEGORY_ORDER.map((category) => {
+          const providers = CONNECTOR_PROVIDERS.filter((provider) => provider.category === category);
+          if (providers.length === 0) return null;
+          return (
+            <section key={category}>
+              <h2 className="mb-3 font-semibold text-owly-text">{CONNECTOR_CATEGORY_LABELS[category]}</h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {providers.map((provider) => (
+                  <div key={provider.provider} className="flex flex-col rounded-xl border border-owly-border bg-owly-surface p-4">
+                    <div className="flex items-center gap-2">
+                      <Plug className="h-5 w-5 text-owly-primary" />
+                      <h3 className="font-semibold text-owly-text">{provider.name}</h3>
+                    </div>
+                    <p className="mt-2 flex-1 text-sm text-owly-text-light">{provider.description}</p>
+                    <p className="mt-2 text-xs uppercase tracking-wide text-owly-text-light">
+                      {provider.authType === "oauth2" ? "OAuth 2.0" : "API key / Basic auth"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => openConnect(provider)}
+                      className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-owly-primary px-3 py-2 text-sm font-semibold text-white"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Connect
+                    </button>
+                    {(byProvider.get(provider.provider)?.length ?? 0) > 0 && (
+                      <p className="mt-2 text-xs text-owly-text-light">
+                        {byProvider.get(provider.provider)!.length} connection{byProvider.get(provider.provider)!.length > 1 ? "s" : ""}
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
+            </section>
+          );
+        })}
 
         <section className="rounded-xl border border-owly-border bg-owly-surface">
           <div className="border-b border-owly-border px-5 py-4">

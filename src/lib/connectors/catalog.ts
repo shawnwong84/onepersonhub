@@ -12,6 +12,12 @@
 
 export type ConnectorProvider = "sap" | "oracle" | "microsoft365" | "dynamics_bc" | "odoo" | "shopee" | "lazada" | "tiktok-shop";
 export type ConnectorAuthType = "oauth2" | "api_key" | "basic_auth";
+export type ConnectorCategory = "ecommerce" | "erp";
+
+export const CONNECTOR_CATEGORY_LABELS: Record<ConnectorCategory, string> = {
+  ecommerce: "E-commerce connectors",
+  erp: "ERP connectors",
+};
 
 export interface ConnectorFieldDef {
   key: string;
@@ -43,6 +49,7 @@ export interface ConnectorProviderDef {
   provider: ConnectorProvider;
   name: string;
   description: string;
+  category: ConnectorCategory;
   authType: ConnectorAuthType;
   fields: ConnectorFieldDef[];
   oauth?: OAuthProviderDef;
@@ -61,6 +68,7 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     provider: "sap",
     name: "SAP S/4HANA",
     description: "Connect via an OData service using an API key or basic auth.",
+    category: "erp",
     authType: "api_key",
     fields: [
       { key: "instanceUrl", label: "Instance URL", location: "config", type: "url", required: true, placeholder: "https://your-sap-host.com" },
@@ -81,6 +89,7 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     provider: "oracle",
     name: "Oracle Fusion / ERP Cloud",
     description: "OAuth2 via Oracle Identity Cloud Service (IDCS).",
+    category: "erp",
     authType: "oauth2",
     fields: [
       { key: "instanceUrl", label: "Fusion Instance URL", location: "config", type: "url", required: true, placeholder: "https://xxxx.fa.ocs.oraclecloud.com" },
@@ -106,6 +115,7 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     provider: "microsoft365",
     name: "Microsoft 365",
     description: "OAuth2 via the Microsoft identity platform (Azure AD).",
+    category: "erp",
     authType: "oauth2",
     fields: [
       { key: "tenantId", label: "Tenant ID", location: "config", type: "text", required: true },
@@ -127,6 +137,7 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     provider: "dynamics_bc",
     name: "Dynamics 365 Business Central",
     description: "OAuth2 via the Microsoft identity platform (same tenant as Microsoft 365, different API scope).",
+    category: "erp",
     authType: "oauth2",
     fields: [
       { key: "tenantId", label: "Tenant ID", location: "config", type: "text", required: true },
@@ -151,6 +162,7 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     provider: "odoo",
     name: "Odoo",
     description: "Connect via Odoo's JSON-RPC external API using an API key.",
+    category: "erp",
     authType: "api_key",
     fields: [
       { key: "instanceUrl", label: "Instance URL", location: "config", type: "url", required: true, placeholder: "https://your-odoo-host.com" },
@@ -169,6 +181,7 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     provider: "shopee",
     name: "Shopee",
     description: "Connect a Shopee shop via the Shopee Open Platform (partner app).",
+    category: "ecommerce",
     authType: "oauth2",
     fields: [
       { key: "partnerId", label: "Partner ID", location: "config", type: "text", required: true },
@@ -185,6 +198,7 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     provider: "lazada",
     name: "Lazada",
     description: "Connect a Lazada seller account via the Lazada Open Platform.",
+    category: "ecommerce",
     authType: "oauth2",
     fields: [
       { key: "appKey", label: "App Key", location: "config", type: "text", required: true },
@@ -200,6 +214,7 @@ export const CONNECTOR_PROVIDERS: ConnectorProviderDef[] = [
     provider: "tiktok-shop",
     name: "TikTok Shop",
     description: "Connect a TikTok Shop via the TikTok Shop Partner Center.",
+    category: "ecommerce",
     authType: "oauth2",
     fields: [
       { key: "appKey", label: "App Key", location: "config", type: "text", required: true },
