@@ -115,6 +115,7 @@ export async function PATCH(
         updatedBy: auth.name || auth.username,
         events: {
           create: {
+            companyId: auth.companyId,
             action: "updated",
             description: `Updated ${existing.recordType}: ${existing.title}`,
             createdBy: auth.name || auth.username,
